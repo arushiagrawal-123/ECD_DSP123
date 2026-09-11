@@ -1,0 +1,106 @@
+# ECG Monitor — default pipeline configuration
+# All values are validated against src/ecg_monitor/config/schema.py on load.
+# Edit this file to tune the pipeline; never hardcode values in source code.
+
+sampling_rate: 360  # Hz — MIT-BIH standard; change for other datasets
+
+acquisition:
+  data_dir: data                # Local cache directory for PhysioNet record files
+  default_record_id: "100"     # Record loaded when none is explicitly specified
+  pn_dir: mitdb                 # PhysioNet database slug
+  annotation_ext: atr           # Beat-annotation file extension
+
+filters:
+  lowcut_hz: 0.5              # Bandpass lower cutoff — removes baseline drift below ~0.5 Hz
+  highcut_hz: 40.0            # Bandpass upper cutoff — ECG energy is within 0.5–40 Hz
+  notch_freq_hz: 50.0         # Powerline notch — 50 Hz (India/EU); use 60.0 for US
+  notch_quality_factor: 30.0  # Notch Q-factor — higher = narrower notch; 30 is a safe default
+  filter_order: 4             # Butterworth order — higher = steeper rolloff, more ringing
+  baseline_correction_method: highpass  # 'highpass' or 'median' — used in Enhanced pipeline
+  baseline_median_kernel_ms: 200.0      # Kernel for median baseline (ms); must span QRS > 150 ms
+  wavelet_name: db4           # PyWavelets wavelet — db4 is standard for ECG denoising
+  wavelet_level: 4            # Decomposition depth — 4 levels appropriate for 360 Hz ECG
+  wavelet_threshold_mode: soft  # 'soft' (smoother) or 'hard' (sharper) coefficient thresholding
+
+noise:
+  random_seed: 42       # Reproducible noise generation across all experiments
+
+  baseline_wander:
+    frequency_min_hz: 0.1    # Lower bound of respiration-rate wander (Hz)
+    frequency_max_hz: 0.5    # Upper bound of respiration-rate wander (Hz)
+    n_components: 3          # Summed sinusoids — more = more irregular-looking wander
+    amplitude: 0.15          # 15% of signal peak-to-peak
+
+  powerline:
+    frequency_hz: 50.0       # Fundamental — 50 Hz (India/EU); use 60.0 for US recordings
+    amplitude: 0.05          # 5% of signal peak-to-peak
+    n_harmonics: 1           # Add one harmonic at 100 Hz with half amplitude
+
+  emg:
+    amplitude: 0.08          # 8% of signal peak-to-peak
+    activity_probability: 0.3  # EMG noise active over ~30% of the signal duration
+    low_cutoff_hz: 20.0      # EMG spectral band lower bound (Hz)
+    high_cutoff_hz: 150.0    # EMG spectral band upper bound (Hz)
+
+  motion:
+    amplitude: 0.25          # 25% of signal peak-to-peak (large transient)
+    duration_s: 0.5          # 500 ms burst length
+    burst_rate: 0.02         # ~0.02 bursts/second (one burst every ~50s on average)
+    frequency_hz: 5.0        # Dominant oscillation within each burst (Hz)
+
+quality:
+  # --- Reference-based thresholds (require a known-clean signal) ---
+  # SNR thresholds (dB) — higher is cleaner
+  # Rationale: 20 dB ≈ 10× signal amplitude over noise (GOOD); 10 dB ≈ 3× (FAIR)
+  # Literature reference: Pan & Tompkins (1985) target SNR > 20 dB for reliable QRS detection.
+  # Flag OQ-6: revisit these thresholds empirically during Phase 11 experiments.
+  good_snr_db: 20.0
+  fair_snr_db: 10.0
+
+  # Pearson correlation with clean reference — higher is better
+  # 0.95 = near-perfect waveform preservation (GOOD); 0.80 = acceptable shape (FAIR)
+  good_correlation: 0.95
+  fair_correlation: 0.80
+
+  # RMSE vs clean reference (in signal amplitude units, typically mV) — lower is better
+  # 0.05 mV ≈ clinically-tolerable distortion for an ECG of ~1–2 mV peak-to-peak (GOOD)
+  # 0.15 mV ≈ upper limit before morphology is meaningfully distorted (FAIR)
+  good_rmse: 0.05
+  fair_rmse: 0.15
+
+  # --- Reference-free thresholds (signal-only, used for live/streaming path) ---
+  # Flatline: std below this value → signal is flat (electrode off or ADC rail)
+  flatline_max_std: 0.0001        # 0.1 μV — virtually zero for any real ECG
+
+  # Clipping: fraction of samples at amplitude extremes → ADC saturation
+  clipping_max_fraction: 0.01    # 1% of samples clipped is acceptable; more → flag
+
+  # Spectral noise floor relative to signal RMS (dB) — high-frequency band (>fs/4)
+  # Estimated as: 20*log10(hf_rms / signal_rms)
+  # Below -20 dB → GOOD; between -20 and -10 dB → FAIR; above -10 dB → POOR
+  spectral_noise_fair_db: -20.0
+  spectral_noise_poor_db: -10.0
+
+alerts:
+  tachycardia_bpm: 100.0        # Candidate threshold (educational prototype only)
+  bradycardia_bpm: 60.0         # Candidate threshold (educational prototype only)
+  min_consecutive_beats: 3      # Require ≥3 consecutive flagged beats before alerting
+  rr_cov_threshold: 0.20        # RR coefficient-of-variation > 20% → irregular candidate
+
+detection:
+  bandpass_lowcut_hz: 5.0
+  bandpass_highcut_hz: 15.0
+  integration_window_ms: 150.0
+  refractory_period_ms: 200.0
+  threshold_learning_beats: 8
+
+evaluation:
+  match_tolerance_ms: 50.0
+
+heart_rate:
+  min_plausible_hr_bpm: 20.0
+  max_plausible_hr_bpm: 300.0
+
+streaming:
+  chunk_duration_s: 1.0
+  buffer_duration_s: 5.0

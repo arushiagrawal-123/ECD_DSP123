@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ecg-monitor"
+version = "0.1.0"
+description = "Noise-Resilient ECG Signal Processing & Real-Time Heart-Rate Monitoring Platform"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "pandas>=2.2",
+    "wfdb>=4.1",
+    "PyWavelets>=1.6",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "matplotlib>=3.9",
+    "plotly>=5.22",
+    "streamlit>=1.36",
+    "reportlab>=4.2",
+    "neurokit2>=0.2",
+    "biosppy==2.2.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+ecg-monitor = "ecg_monitor.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ecg_monitor"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
+ignore = ["ANN101", "ANN102"]
+
+[tool.mypy]
+disable_error_code = ["no-any-return"]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=src/ecg_monitor --cov-report=term-missing -m 'not integration'"
+markers = [
+    "integration: marks tests that require network access or live data (deselected by default; run with -m integration)",
+]
+
