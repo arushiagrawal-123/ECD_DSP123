@@ -11,7 +11,6 @@ from pydantic import ValidationError
 from ecg_monitor.config import ECGMonitorConfig, load_config
 from ecg_monitor.core import (
     AlertEvent,
-    AnalysisResult,
     DetectionEvaluation,
     ECGPackage,
     HeartRateStats,
@@ -87,24 +86,6 @@ def test_ecg_package_construction() -> None:
     assert pkg.quality.label == "GOOD"
 
 
-def test_analysis_result_construction() -> None:
-    result = AnalysisResult(
-        r_peaks=[100, 460, 820],
-        evaluation=DetectionEvaluation(
-            sensitivity=0.95,
-            ppv=0.93,
-            f1=0.94,
-            timing_error_ms=TimingErrorStats(
-                mean_ms=2.1, std_ms=0.8, median_ms=2.0, p95_ms=3.5
-            ),
-        ),
-        heart_rate=HeartRateStats(
-            instantaneous=[80.0, 81.0], average=80.5, min=80.0, max=81.0
-        ),
-        rr_variability=RRVariability(sdnn=12.3, rmssd=10.1, cov=0.05),
-        alerts=[],
-    )
-    assert result.evaluation.f1 == pytest.approx(0.94)
 
 
 def test_alert_event_auto_id() -> None:

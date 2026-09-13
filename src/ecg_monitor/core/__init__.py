@@ -6,7 +6,6 @@ Import from here in all pipeline stages; never import from sub-modules directly.
 
 from ecg_monitor.core.models import (
     AlertEvent,
-    AnalysisResult,
     DetectionEvaluation,
     ECGPackage,
     HeartRateStats,
@@ -18,7 +17,6 @@ from ecg_monitor.core.models import (
 
 __all__ = [
     "AlertEvent",
-    "AnalysisResult",
     "DetectionEvaluation",
     "ECGPackage",
     "HeartRateStats",

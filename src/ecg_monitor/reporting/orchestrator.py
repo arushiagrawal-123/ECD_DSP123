@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ecg_monitor.core.models import AlertEvent
+from ecg_monitor.experiments.models import ExperimentResult
 from ecg_monitor.reporting.exporters import (
     export_alerts_csv,
     export_beats_csv,

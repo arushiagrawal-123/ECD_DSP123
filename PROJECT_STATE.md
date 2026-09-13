@@ -1014,3 +1014,29 @@ When attempting to replicate the 73 Tachycardia alerts on Record 105 in the stre
 - **14. CROSS-MODULE CONSISTENCY:**
   - **Found:** `generate_session_report` in `reporting/orchestrator.py` consumed a loose dict for `metrics`, violating the Phase 1 Data Contract.
   - **Fixed:** Refactored `generate_session_report` to strictly accept an `ExperimentResult` struct, enforcing strict cross-module types and updating `app/pages/experiments.py` to match.
+
+## Build Log: Phase 16 - Massive Project Cleanup (September 2026)
+
+**Goal:** Remove all unnecessary files, duplicate helpers, and redundant data structures without breaking test coverage or end-to-end functionality.
+
+### Removals and Consolidation:
+1. **Dead Code & Models:**
+   - **`AnalysisResult`**: Identified as a Phase 1 scaffolding artifact that was fully superseded by `ExperimentResult` in Phase 11. It was removed from `core/models.py`, `core/__init__.py`, and all test schemas. This definitively resolved the "no loose dicts" mandate by removing the redundant model it was supposedly bypassing.
+2. **Scratch / Sanity Check Files:**
+   - Removed all `scratch_*.py`, `debug_*.py`, `patch_test.py`, and `synthetic_test.py` files cluttering the root directory.
+   - Removed the entire `notebooks/` directory containing `sanity_check_*.py` throwaway scripts that were strictly intended for manual execution during Phases 1-13 and provided no reusable value.
+3. **Dead Directories & Scaffolding:**
+   - Removed `app/pages/test.py` which was a defunct placeholder page.
+4. **Test Fixtures (Redundant Code):**
+   - Refactored `tests/evaluation/test_evaluation.py` and `tests/heart_rate/test_heart_rate.py` which were manually loading records and configs (re-implementing fixture logic). Updated them to inject `record_100` and `config` fixtures.
+   - Renamed `test_phase1_scaffold.py` to `test_models.py` because it contained valid schema tests, and removed `root_config` boilerplate across the testing suite to standard `config` from `conftest.py`.
+5. **Artifacts:**
+   - Cleared thousands of redundant `results/session_*` and `data/session_*` folders generated during testing. Kept only the 3 canonical benchmark CSVs (`exp1_noise_robustness.csv`, etc.) in `results/`.
+   - Verified that `.gitignore` correctly prevents `data/` and `results/` from committing bulk.
+
+**Verification:**
+- Ran `pytest` suite (including all integration tests): **100% Passed**.
+- All end-to-end features (Streamlit App, Experiments 1-3, PDF generation) remain fully functional.
+
+### Current State
+The repository is strictly limited to production code (`src/`, `app/`), test suites (`tests/`), benchmark runners (`experiments/`), and core documentation/configuration. All prototypes and scaffolding have been safely archived.

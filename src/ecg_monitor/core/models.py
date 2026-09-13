@@ -156,20 +156,3 @@ class ECGPackage(BaseModel):
     )
     quality: SignalQuality
     reference_annotations: ReferenceAnnotations = Field(default_factory=ReferenceAnnotations)
-
-
-class AnalysisResult(BaseModel):
-    """
-    The output of a complete pipeline run for one ECGPackage.
-
-    Aggregates detection, evaluation, heart-rate statistics, HRV, and alerts.
-    """
-
-    r_peaks: list[int] = Field(
-        default_factory=list,
-        description="Sample indices of detected R-peaks.",
-    )
-    evaluation: DetectionEvaluation
-    heart_rate: HeartRateStats
-    rr_variability: RRVariability
-    alerts: list[AlertEvent] = Field(default_factory=list)

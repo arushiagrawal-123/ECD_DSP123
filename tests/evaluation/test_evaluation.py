@@ -16,10 +16,6 @@ from ecg_monitor.evaluation.metrics import compute_metrics, compute_timing_stats
 
 FS = 360
 
-@pytest.fixture
-def config() -> ECGMonitorConfig:
-    config_path = Path(__file__).parents[2] / "config.yaml"
-    return load_config(config_path)
 
 
 def test_filter_reference_beats():
@@ -96,20 +92,16 @@ def test_compute_timing_stats():
 
 
 @pytest.mark.integration
-def test_integration_evaluator(real_data_dir: Path):
+def test_integration_evaluator(record_100: ECGPackage, config: ECGMonitorConfig):
     """
     End-to-end evaluation on real record 100.
     We expect > 95% sensitivity and PPV.
     """
-    from ecg_monitor.acquisition.loader import load_record
     from ecg_monitor.preprocessing.pipeline import PreprocessingTier, preprocess
     from ecg_monitor.detection.detector import QRSDetector
 
-    config_path = Path(__file__).parents[2] / "config.yaml"
-    cfg = load_config(config_path)
-    
-    DATA_DIR = Path(__file__).parents[2] / "data"
-    pkg = load_record("100", DATA_DIR)
+    pkg = record_100
+    cfg = config
     fs = pkg.sampling_rate
     
     # Use 5 minutes of data

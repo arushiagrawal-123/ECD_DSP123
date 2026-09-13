@@ -19,10 +19,6 @@ from ecg_monitor.detection.stages import (
 
 FS = 360
 
-@pytest.fixture
-def config() -> ECGMonitorConfig:
-    config_path = Path(__file__).parents[2] / "config.yaml"
-    return load_config(config_path)
 
 def generate_synthetic_ecg(fs: int, duration_s: int, hr_bpm: int) -> tuple[np.ndarray, list[int]]:
     """Generate a clean synthetic ECG consisting of Gaussian pulses for QRS."""

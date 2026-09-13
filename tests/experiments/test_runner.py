@@ -15,10 +15,6 @@ from ecg_monitor.experiments.runner import run_pipeline_experiment
 from ecg_monitor.preprocessing.pipeline import PreprocessingTier
 
 
-@pytest.fixture
-def config():
-    config_path = Path(__file__).parents[2] / "config.yaml"
-    return load_config(config_path)
 
 
 @pytest.fixture

@@ -17,7 +17,7 @@ def real_data_dir() -> Path:
     return _DATA_DIR
 
 @pytest.fixture(scope="session")
-def root_config():
+def config():
     """Returns the parsed root config.yaml."""
     return load_config(_CONFIG_PATH)
 

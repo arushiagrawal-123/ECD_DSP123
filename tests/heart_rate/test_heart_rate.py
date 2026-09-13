@@ -21,10 +21,6 @@ from ecg_monitor.heart_rate.pipeline import extract_heart_rate_features
 
 FS = 360
 
-@pytest.fixture
-def config() -> ECGMonitorConfig:
-    config_path = Path(__file__).parents[2] / "config.yaml"
-    return load_config(config_path)
 
 
 def test_compute_rr_intervals():
@@ -109,19 +105,15 @@ def test_extract_heart_rate_features_pipeline(config: ECGMonitorConfig):
 
 
 @pytest.mark.integration
-def test_integration_heart_rate_real_record(real_data_dir: Path):
+def test_integration_hr(record_100, config):
     """
     End-to-end: real MIT-BIH record -> Phase 7 detection -> Phase 9 HR.
     """
-    from ecg_monitor.acquisition.loader import load_record
     from ecg_monitor.preprocessing.pipeline import PreprocessingTier, preprocess
     from ecg_monitor.detection.detector import QRSDetector
     
-    config_path = Path(__file__).parents[2] / "config.yaml"
-    cfg = load_config(config_path)
-    
-    DATA_DIR = Path(__file__).parents[2] / "data"
-    pkg = load_record("100", DATA_DIR)
+    pkg = record_100
+    cfg = config
     fs = pkg.sampling_rate
     
     # Use 5 minutes of data

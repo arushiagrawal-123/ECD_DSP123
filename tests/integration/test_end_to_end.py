@@ -16,7 +16,7 @@ from ecg_monitor.reporting.orchestrator import generate_session_report
 
 @pytest.mark.integration
 @pytest.mark.parametrize("record_id", ["100", "101", "105"])
-def test_full_pipeline_end_to_end(record_id: str, real_data_dir: Path, root_config, tmp_path: Path):
+def test_full_pipeline_end_to_end(record_id: str, real_data_dir: Path, config, tmp_path: Path):
     """
     Run the entire pipeline from raw record load to generated report.
     Asserts sanity bounds on all major metrics.
@@ -33,7 +33,7 @@ def test_full_pipeline_end_to_end(record_id: str, real_data_dir: Path, root_conf
     # 2. Run Pipeline (first 60 seconds to save time)
     res = run_pipeline_experiment(
         exp_config=exp_config,
-        base_config=root_config,
+        base_config=config,
         data_dir=real_data_dir,
         artifact_types=["baseline_wander", "powerline"],
     )
@@ -52,29 +52,13 @@ def test_full_pipeline_end_to_end(record_id: str, real_data_dir: Path, root_conf
     
     # 3. Generate Report
     session_id = f"e2e_{record_id}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    metrics = {
-        "snr_db": res.quality.snr_db,
-        "rmse": res.quality.rmse,
-        "quality_label": res.quality.label,
-        "sensitivity": res.sensitivity,
-        "ppv": res.ppv,
-        "f1": res.f1,
-        "timing_error_mean_ms": res.timing_error_mean_ms,
-        "hr_average_bpm": res.hr_stats.average if res.hr_stats else None,
-        "hrv_sdnn_ms": res.hrv_stats.sdnn if res.hrv_stats else None,
-        "total_beats": len(res.detected_peaks)
-    }
-    
     # Output to tmp_path so we don't clutter the actual results dir
     session_dir = generate_session_report(
         results_dir=tmp_path,
         session_id=session_id,
         record_id=record_id,
-        fs=root_config.sampling_rate,
-        peaks=res.detected_peaks,
-        alerts=res.alerts,
-        metrics=metrics,
-        config_dict=exp_config.model_dump()
+        fs=config.sampling_rate,
+        result=res
     )
     
     # 4. Assert files exist and have content
