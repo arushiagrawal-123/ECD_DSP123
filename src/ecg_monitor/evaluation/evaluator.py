@@ -34,7 +34,11 @@ def evaluate_detection(
     tolerance_ms = config.evaluation.match_tolerance_ms
 
     ref_ann = package.reference_annotations
-    valid_ref_beats = filter_reference_beats(ref_ann.sample_indices, ref_ann.symbols)
+    valid_ref_beats = filter_reference_beats(
+        ref_ann.sample_indices, 
+        ref_ann.symbols, 
+        config.evaluation.valid_beat_symbols
+    )
 
     matches, fps, fns = match_peaks(detected_peaks, valid_ref_beats, fs, tolerance_ms)
 

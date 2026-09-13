@@ -20,7 +20,7 @@ _MITDB_PN_DIR = "mitdb"
 _REQUIRED_EXTENSIONS = (".hea", ".dat", ".atr")
 
 
-def ensure_record_local(record_id: str, data_dir: Path) -> None:
+def ensure_record_local(record_id: str, data_dir: Path, pn_dir: str = "mitdb") -> None:
     """
     Ensure a MIT-BIH record's files are present in *data_dir*.
 
@@ -33,6 +33,8 @@ def ensure_record_local(record_id: str, data_dir: Path) -> None:
         MIT-BIH record name, e.g. ``"100"``.
     data_dir:
         Local directory where files are cached.
+    pn_dir:
+        PhysioNet database slug.
 
     Raises
     ------
@@ -54,7 +56,7 @@ def ensure_record_local(record_id: str, data_dir: Path) -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             wfdb.dl_files(
-                db=_MITDB_PN_DIR,
+                db=pn_dir,
                 dl_dir=str(data_dir),
                 files=needed,
                 keep_subdirs=False,
@@ -63,7 +65,7 @@ def ensure_record_local(record_id: str, data_dir: Path) -> None:
     except Exception as exc:
         raise RuntimeError(
             f"Failed to download record '{record_id}' from PhysioNet "
-            f"(db='{_MITDB_PN_DIR}'). "
+            f"(db='{pn_dir}'). "
             f"Check your network connection and that the record ID is valid.\n"
             f"Original error: {exc}"
         ) from exc

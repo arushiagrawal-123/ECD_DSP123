@@ -128,15 +128,31 @@ def test_pdf_disclaimer_and_no_clinical_language(mock_data, tmp_path):
 def test_orchestrator(mock_data, tmp_path):
     fs, peaks, alerts, metrics, config = mock_data
     
+    from ecg_monitor.experiments.models import ExperimentResult, ExperimentConfig
+    from ecg_monitor.preprocessing.pipeline import PreprocessingTier
+    from ecg_monitor.core.models import SignalQuality
+    
+    dummy_config = ExperimentConfig(
+        record_id="100",
+        preprocessing_tier=PreprocessingTier.ENHANCED,
+        random_seed=42,
+    )
+    result = ExperimentResult(
+        config=dummy_config,
+        sensitivity=1.0, ppv=1.0, f1=0.99,
+        timing_error_mean_ms=0.0, timing_error_std_ms=0.0,
+        hr_average_bpm=60.0, hrv_sdnn_ms=0.0,
+        detected_peaks=peaks,
+        alerts=alerts,
+        quality=SignalQuality(label="GOOD", snr_db=15.5, rmse=0.0, correlation=1.0)
+    )
+
     session_dir = generate_session_report(
         results_dir=tmp_path,
         session_id="session_123",
         record_id="100",
         fs=fs,
-        peaks=peaks,
-        alerts=alerts,
-        metrics=metrics,
-        config_dict=config
+        result=result
     )
     
     assert session_dir.exists()

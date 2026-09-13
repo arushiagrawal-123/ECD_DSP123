@@ -352,6 +352,10 @@ class EvaluationConfig(BaseModel):
         default=50.0,
         description="Tolerance window (± ms) for matching detected peaks to reference.",
     )
+    valid_beat_symbols: list[str] = Field(
+        default=["N", "L", "R", "B", "A", "a", "J", "S", "V", "r", "F", "e", "j", "n", "E", "/", "f", "Q", "?"],
+        description="List of WFDB annotation symbols considered as valid beats.",
+    )
 
 
 class HeartRateConfig(BaseModel):
@@ -394,6 +398,10 @@ class AcquisitionConfig(BaseModel):
     annotation_ext: str = Field(
         default="atr",
         description="WFDB annotation file extension for reference beat labels.",
+    )
+    preferred_channels: list[str] = Field(
+        default=["MLII", "MLI", "V1", "V5"],
+        description="List of channel names in order of preference if auto-selecting.",
     )
 
 

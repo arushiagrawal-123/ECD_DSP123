@@ -73,10 +73,12 @@ def run_pipeline_experiment(
     pkg.filtered_signal = filtered_signal
 
     # 4. Assess Quality
+    from ecg_monitor.quality.scorer import score_signal
     # Using reference metrics since we know the clean signal
-    snr_db = compute_snr(clean_signal, filtered_signal)
-    rmse = compute_rmse(clean_signal, filtered_signal)
-    correlation = compute_correlation(clean_signal, filtered_signal)
+    quality_res = score_signal(filtered_signal, clean_signal, base_config.quality)
+    snr_db = quality_res.snr_db
+    rmse = quality_res.rmse
+    correlation = quality_res.correlation
 
     # 5. Detect R-peaks
     if exp_config.detector_name == "custom":
@@ -94,14 +96,6 @@ def run_pipeline_experiment(
 
     # 7. Compute HR/RR
     hr_stats, hrv = extract_heart_rate_features(detected_peaks, fs, base_config)
-
-    # Generate Quality and Alerts for Reports
-    quality_res = SignalQuality(
-        label=label_quality(snr_db, rmse, correlation, base_config.quality),
-        snr_db=snr_db,
-        rmse=rmse,
-        correlation=correlation,
-    )
 
     alert_engine = AlertEngine(base_config.alerts)
     import numpy as np

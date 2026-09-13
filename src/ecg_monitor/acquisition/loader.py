@@ -38,6 +38,7 @@ def load_record(
     channel: str | int | None = None,
     pn_dir: str = "mitdb",
     annotation_ext: str = "atr",
+    preferred_channels: list[str] | None = None,
 ) -> ECGPackage:
     """
     Load a single MIT-BIH ECG record and return a populated :class:`ECGPackage`.
@@ -58,6 +59,8 @@ def load_record(
         PhysioNet database slug used for downloading (default ``"mitdb"``).
     annotation_ext:
         Annotation file extension (default ``"atr"`` for MIT-BIH reference labels).
+    preferred_channels:
+        List of channel names in order of preference if auto-selecting.
 
     Returns
     -------
@@ -75,9 +78,9 @@ def load_record(
         or if the record contains no usable signal data.
     """
     data_dir = Path(data_dir)
-    ensure_record_local(record_id, data_dir)
+    ensure_record_local(record_id, data_dir, pn_dir=pn_dir)
 
-    signal_array, sampling_rate = _read_signal(record_id, data_dir, channel, pn_dir)
+    signal_array, sampling_rate = _read_signal(record_id, data_dir, channel, pn_dir, preferred_channels)
     annotations = _read_annotations(record_id, data_dir, annotation_ext, pn_dir)
 
     return ECGPackage(
@@ -100,6 +103,7 @@ def _read_signal(
     data_dir: Path,
     channel: str | int | None,
     pn_dir: str,
+    preferred_channels: list[str] | None,
 ) -> tuple[np.ndarray, int]:
     """
     Read and extract a single-channel signal from a WFDB record.
@@ -125,7 +129,7 @@ def _read_signal(
         raise ValueError(f"Record '{record_id}' contains no physical signal data.")
 
     sig_names: list[str] = list(getattr(record, "sig_name", []) or [])
-    ch_idx = select_channel_index(sig_names, channel)
+    ch_idx = select_channel_index(sig_names, channel, preferred_channels)
 
     # p_signal is shape (n_samples, n_channels); extract one column
     raw = p_signal[:, ch_idx].astype(np.float64)

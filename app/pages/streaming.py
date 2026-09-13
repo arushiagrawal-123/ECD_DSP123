@@ -109,6 +109,7 @@ def render_streaming(pkg: ECGPackage, config, tier: PreprocessingTier) -> None:
 
     snap = st.session_state.history[-1]
 
+    st.caption("**Quality mode:** Reference-free (no clean baseline available in streaming)")
     m1, m2, m3 = st.columns(3)
     m1.metric("Signal Quality", snap.current_signal_quality)
     m2.metric(

@@ -6,40 +6,15 @@ from __future__ import annotations
 
 import numpy as np
 
-# MIT-BIH PhysioBank standard beat annotation symbols
-# Excludes non-beat markers like '~' (signal quality), '+' (rhythm change), '|' (artifact).
-# Source: https://archive.physionet.org/physiobank/annotations.shtml
-VALID_BEAT_SYMBOLS = {
-    "N",
-    "L",
-    "R",
-    "B",
-    "A",
-    "a",
-    "J",
-    "S",
-    "V",
-    "r",
-    "F",
-    "e",
-    "j",
-    "n",
-    "E",
-    "/",
-    "f",
-    "Q",
-    "?",
-}
-
-
-def filter_reference_beats(sample_indices: list[int], symbols: list[str]) -> list[int]:
+def filter_reference_beats(sample_indices: list[int], symbols: list[str], valid_symbols: list[str] | set[str]) -> list[int]:
     """
     Filter a raw list of reference annotations to keep only valid beat symbols.
     """
+    valid_set = set(valid_symbols)
     return [
         idx
         for idx, sym in zip(sample_indices, symbols, strict=False)
-        if sym in VALID_BEAT_SYMBOLS
+        if sym in valid_set
     ]
 
 

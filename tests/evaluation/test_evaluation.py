@@ -25,7 +25,7 @@ def config() -> ECGMonitorConfig:
 def test_filter_reference_beats():
     indices = [10, 20, 30, 40]
     symbols = ['N', '~', 'V', '+']
-    filtered = filter_reference_beats(indices, symbols)
+    filtered = filter_reference_beats(indices, symbols, valid_symbols=["N", "V"])
     assert filtered == [10, 30]
 
 

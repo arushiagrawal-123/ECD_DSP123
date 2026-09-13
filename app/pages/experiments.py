@@ -76,6 +76,7 @@ def render_experiments(config) -> None:
                 
                 # Show results
                 st.subheader("Results")
+                st.info("**Quality mode: Reference-based** — Metrics are computed by comparing the noisy signal against the clean original.", icon="ℹ️")
                 rc1, rc2, rc3 = st.columns(3)
                 rc1.metric("SNR (dB)", f"{res.quality.snr_db:.1f}")
                 rc2.metric("F1 Score", f"{res.f1:.3f}")
@@ -83,27 +84,12 @@ def render_experiments(config) -> None:
                 
                 # Auto-export
                 session_id = f"exp_{record_id}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                metrics = {
-                    "snr_db": res.quality.snr_db,
-                    "rmse": res.quality.rmse,
-                    "quality_label": res.quality.label,
-                    "sensitivity": res.sensitivity,
-                    "ppv": res.ppv,
-                    "f1": res.f1,
-                    "timing_error_mean_ms": res.timing_error_mean_ms,
-                    "hr_average_bpm": res.hr_stats.average if res.hr_stats else None,
-                    "hrv_sdnn_ms": res.hrv_stats.sdnn if res.hrv_stats else None,
-                    "total_beats": len(res.detected_peaks)
-                }
                 session_dir = generate_session_report(
                     results_dir=results_dir,
                     session_id=session_id,
                     record_id=record_id,
                     fs=config.sampling_rate,
-                    peaks=res.detected_peaks,
-                    alerts=res.alerts,
-                    metrics=metrics,
-                    config_dict=exp_config.model_dump()
+                    result=res,
                 )
                 st.info(f"Report exported to `{session_dir}`")
                 

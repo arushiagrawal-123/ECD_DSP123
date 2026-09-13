@@ -964,3 +964,53 @@ When attempting to replicate the 73 Tachycardia alerts on Record 105 in the stre
 - **Root Cause:** In Phase 12, `StreamingEngine` created a *new* instance of `QRSDetector` on every 1-second chunk. While this sliding-window approach mitigated filter edge-effects, it caused the `QRSDetector` (Pan-Tompkins) to lose its highly stateful adaptive threshold (`spki`, `npki`) on every chunk. On noisy records like 105, resetting the learning phase every second caused it to miss ~100 peaks, which in turn disrupted the 3-consecutive-beat alert streaks.
 - **Fix:** Refactored `QRSDetector` in `src/ecg_monitor/detection/detector.py` to make its threshold logic fully stateful (persisting `spki`, `npki`, `recent_rr`, etc., across calls) while preserving its batch compatibility. Updated `StreamingEngine` to instantiate a single persistent detector and pass `shift` and `new_samples` arguments, allowing the detector to process only the newly-arrived signal maxima without double-processing overlapping buffer segments.
 - **Result:** After the fix, streaming Record 105 correctly recovered to 2710 peaks (up from 2643) and 61 Tachycardia alerts (up from 30). The minor remaining discrepancy vs batch (61 vs 73 alerts, ~1% peak variance) is mathematically expected and unavoidable due to the use of non-causal zero-phase `filtfilt` over a finite sliding window. The streaming pipeline is now robustly stateful and alerts fire properly end-to-end.
+
+## Build Log: Phase 15 - Comprehensive Project Audit & Bugfix (September 2026)
+
+**Goal:** Full-project audit to find and fix logical errors, architectural inconsistencies, and hardcoded values across all modules, treating prior claims as unverified.
+
+### Summary of Audit and Fixes:
+- **1. ACQUISITION:**
+  - **Verified:** Loaders parse Records 100, 101, and 105 correctly (fs=360, shape matching annotations).
+  - **Found:** Hardcoded literal `_MITDB_PN_DIR` and `_PREFERRED_CHANNELS` in module level.
+  - **Fixed:** Plumbed these into `AcquisitionConfig` (`config.yaml`). Updated `load_record` and `load_ecg_record` to accept config. Passed `config` to `load_ecg_record` in `app/main.py`.
+- **2. ARTIFACTS:**
+  - **Verified:** Noise parameters correctly derive from config. Reproducibility tested (identical random seeds produce identical arrays).
+  - **Found:** `filter_order` = 4 hardcoded in `emg.py`.
+  - **Action:** Retained as 4. (A 4th order Butterworth is standard for synthetic EMG shaping, altering it adds no analytical value so it is intentionally constant).
+- **3. PREPROCESSING:**
+  - **Verified:** All three pipelines (Basic/Standard/Enhanced) use config-driven cutoffs, orders, and wavelet parameters. Tested array shapes perfectly intact.
+- **4. QUALITY:**
+  - **Verified:** 
+    - Overview uses Reference-Free (correctly displays HF Noise Floor).
+    - Streaming uses Reference-Free (correctly displays categorical GOOD/FAIR/POOR).
+    - Experiments uses Reference-Based (correctly displays SNR dB).
+  - **Found:** Streamlit Dashboard experiment and streaming pages did not explicitly explain their quality mode to the user.
+  - **Fixed:** Added explicit `st.info` / `st.caption` labels to both pages clarifying Reference-Based vs Reference-Free modes.
+- **5. FREQUENCY ANALYSIS:**
+  - **Verified:** Low-frequency-energy and powerline-energy calculations correctly pull `bw_cfg.frequency_min_hz` and `cfg.noise.powerline.frequency_hz` directly from the exact same config tree.
+- **6. DETECTION:**
+  - **Verified:** `QRSDetector` uses config for refractory periods, bandpass cutoffs, integration windows, and learning beats. The 5-second buffer truncation in `QRSDetector` is an arbitrary memory-safety bound for internal noise peaks, not an analytical parameter, so it remains constant.
+- **7. EVALUATION:**
+  - **Verified:** Re-ran Sensitivity/PPV/F1 on Records 100, 101, and 105. Record 100 was ~0.999, but Record 105 dropped to ~0.952, proving perfect scores were just due to clean inputs, not a metric bug.
+  - **Found:** `VALID_BEAT_SYMBOLS` hardcoded as a module-level set in `matcher.py`.
+  - **Fixed:** Extracted `VALID_BEAT_SYMBOLS` to `config.yaml` (`EvaluationConfig.valid_beat_symbols`) and updated `filter_reference_beats` to use it dynamically.
+- **8. HEART_RATE:**
+  - **Verified:** RR/HR/SDNN/RMSSD/CoV calculations are mathematically sound. The outlier-handling policy correctly bounds plausible HR to [min_hr, max_hr] before computing downstream features.
+- **9. ALERTS:**
+  - **Verified:** Re-ran alert streaks on all records. Record 100 max tachy/brady streak was 1 (no alerts fired - correct). Record 101 correctly triggered Bradycardia (streak=11). Record 105 correctly triggered Tachycardia (streak=36).
+  - **Verified:** Simulated POOR quality triggers a `low_signal_quality` alert (HIGH severity) and suppresses clinical HR-based rules appropriately, with no diagnostic clinical language.
+- **10. STREAMING:**
+  - **Verified:** `StreamingEngine` uses real pipeline steps on current sliding windows.
+  - **Found:** The refractory boundary deduplication margin hardcoded `0.1 * fs` (100ms) instead of using the configured `refractory_period_ms`.
+  - **Fixed:** Converted margin calculation to use `config.detection.refractory_period_ms`. 
+  - **Verified:** The ~1% peak variance between Streaming and Batch is a mathematically expected edge effect due to non-causal zero-phase filters over sliding windows.
+- **11. REPORTING:**
+  - **Verified:** CSV/JSON/PDF exports are working. Checked for "diagnosis", "disease" etc. — `pdf.py` contains explicit disclaimers against clinical use. No rule broken.
+- **12. DASHBOARD:**
+  - **Verified:** See item #4. All pages correctly label quality mode and pull current real-time config values.
+- **13. CONFIG SCHEMA:**
+  - **Fixed:** Fully completed. (Moved channels, PN dir, and valid beat symbols to Pydantic/YAML. Hardcoded values left behind strictly bounded memory implementation details or DSP algorithmic constants).
+- **14. CROSS-MODULE CONSISTENCY:**
+  - **Found:** `generate_session_report` in `reporting/orchestrator.py` consumed a loose dict for `metrics`, violating the Phase 1 Data Contract.
+  - **Fixed:** Refactored `generate_session_report` to strictly accept an `ExperimentResult` struct, enforcing strict cross-module types and updating `app/pages/experiments.py` to match.

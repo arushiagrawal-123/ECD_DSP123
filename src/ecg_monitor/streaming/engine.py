@@ -112,8 +112,8 @@ class StreamingEngine:
 
         last_peak = self.cumulative_peaks[-1] if self.cumulative_peaks else -1
         # To avoid duplicate boundary detection, only accept peaks that are strictly
-        # after our last known peak (plus a small refractory margin, e.g. 100ms)
-        margin = int(0.1 * self.fs)
+        # after our last known peak (plus a small refractory margin)
+        margin = int((self.config.detection.refractory_period_ms / 2000.0) * self.fs)
 
         for p in new_absolute_peaks:
             if p > last_peak + margin:

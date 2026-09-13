@@ -18,8 +18,9 @@ from ecg_monitor.quality.referencefree import label_quality_referencefree
 from app.utils import plot_ecg_signal, plot_hr_trend
 
 
-@st.cache_resource
+@st.cache_data
 def run_static_analysis(
+    record_id: str,
     _pkg: ECGPackage,
     _config,
     tier: PreprocessingTier,
@@ -92,7 +93,7 @@ def render_overview(pkg: ECGPackage, config, tier: PreprocessingTier) -> None:
     st.caption("EDUCATIONAL PROTOTYPE — NOT FOR MEDICAL USE")
 
     with st.spinner("Running analysis pipeline..."):
-        res = run_static_analysis(pkg, config, tier)
+        res = run_static_analysis(pkg.record_id, pkg, config, tier)
 
     # Explain which quality path was used
     st.info(

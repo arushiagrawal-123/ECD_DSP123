@@ -7,13 +7,10 @@ function has a single responsibility.
 
 from __future__ import annotations
 
-# Standard MIT-BIH lead names, in priority order for auto-selection
-_PREFERRED_CHANNELS = ("MLII", "MLI", "V1", "V5")
-
-
 def select_channel_index(
     sig_names: list[str],
     channel: str | int | None,
+    preferred_channels: list[str] | None = None,
 ) -> int:
     """
     Resolve which channel index to use from a multi-channel record.
@@ -27,6 +24,8 @@ def select_channel_index(
         - ``None`` — auto-select: use MLII if present, else the first channel.
         - ``int``  — direct index (validated against number of channels).
         - ``str``  — channel name (case-insensitive match required).
+    preferred_channels:
+        List of channel names in order of preference if auto-selecting.
 
     Returns
     -------
@@ -39,11 +38,12 @@ def select_channel_index(
         If a named or indexed channel cannot be found.
     """
     if channel is None:
-        for preferred in _PREFERRED_CHANNELS:
-            try:
-                return _index_by_name(sig_names, preferred)
-            except ValueError:
-                continue
+        if preferred_channels:
+            for preferred in preferred_channels:
+                try:
+                    return _index_by_name(sig_names, preferred)
+                except ValueError:
+                    continue
         return 0  # fallback: first channel
 
     if isinstance(channel, int):

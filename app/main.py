@@ -51,7 +51,7 @@ def main() -> None:
     
     # Load the record globally so all pages can use it
     try:
-        pkg = load_ecg_record(record_id)
+        pkg = load_ecg_record(record_id, config)
     except Exception as e:
         st.error(f"Failed to load record {record_id}: {e}")
         return

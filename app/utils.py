@@ -37,10 +37,16 @@ def get_root_config():
 
 
 @st.cache_resource
-def load_ecg_record(record_id: str) -> ECGPackage:
+def load_ecg_record(record_id: str, _config) -> ECGPackage:
     """Load an ECG record, cached to avoid re-reading files."""
-    data_dir = Path(__file__).parents[1] / "data"
-    return load_record(record_id, data_dir)
+    data_dir = _config.acquisition.data_dir
+    return load_record(
+        record_id,
+        data_dir,
+        pn_dir=_config.acquisition.pn_dir,
+        annotation_ext=_config.acquisition.annotation_ext,
+        preferred_channels=_config.acquisition.preferred_channels,
+    )
 
 
 def plot_ecg_signal(

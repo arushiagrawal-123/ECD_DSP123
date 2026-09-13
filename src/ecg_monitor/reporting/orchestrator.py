@@ -24,10 +24,7 @@ def generate_session_report(
     session_id: str,
     record_id: str,
     fs: int,
-    peaks: list[int],
-    alerts: list[AlertEvent],
-    metrics: dict[str, Any],
-    config_dict: dict[str, Any],
+    result: ExperimentResult,
 ) -> Path:
     """
     Generate the complete reporting suite for a session/experiment run.
@@ -52,14 +49,8 @@ def generate_session_report(
         The MIT-BIH record ID processed.
     fs:
         Sampling rate.
-    peaks:
-        Cumulative absolute sample indices of detected R-peaks.
-    alerts:
-        List of all alerts triggered.
-    metrics:
-        Dictionary of summary metrics (SNR, F1, HR, etc.).
-    config_dict:
-        Serialized experiment and system configuration.
+    result:
+        The fully populated ExperimentResult model.
 
     Returns
     -------
@@ -72,23 +63,34 @@ def generate_session_report(
     # 1. Create subdirectories
     plots_dir = session_dir / "plots"
     plots_dir.mkdir(exist_ok=True)
-
+    
+    metrics = {
+        "snr_db": result.quality.snr_db if result.quality else None,
+        "rmse": result.quality.rmse if result.quality else None,
+        "quality_label": result.quality.label if result.quality else "UNSET",
+        "sensitivity": result.sensitivity,
+        "ppv": result.ppv,
+        "f1": result.f1,
+        "timing_error_mean_ms": result.timing_error_mean_ms,
+        "hr_average_bpm": result.hr_stats.average if result.hr_stats else None,
+        "hrv_sdnn_ms": result.hrv_stats.sdnn if result.hrv_stats else None,
+        "total_beats": len(result.detected_peaks)
+    }
+    
     # 2. Export CSVs
-    export_beats_csv(session_dir / "beats.csv", peaks, fs)
-    export_rr_intervals_csv(session_dir / "rr_intervals.csv", peaks, fs)
-    export_alerts_csv(session_dir / "events.csv", alerts)
+    export_beats_csv(session_dir / "beats.csv", result.detected_peaks, fs)
+    export_rr_intervals_csv(session_dir / "rr_intervals.csv", result.detected_peaks, fs)
+    export_alerts_csv(session_dir / "events.csv", result.alerts)
     export_metrics_csv(session_dir / "metrics.csv", metrics)
 
     # 3. Export JSON Configuration
+    # Convert config model to dict for JSON serialization
+    config_dict = result.config.model_dump() if hasattr(result.config, "model_dump") else result.config.dict()
     export_config_json(session_dir / "configuration.json", config_dict, metrics)
 
     # 4. Generate PDF Summary
     # Count alerts by type for the summary
-    alert_counts = collections.Counter(a.event_type for a in alerts)
-
-    # Ensure total_beats is in metrics
-    if "total_beats" not in metrics:
-        metrics["total_beats"] = len(peaks)
+    alert_counts = collections.Counter(a.event_type for a in result.alerts)
 
     export_summary_pdf(
         session_dir / "summary.pdf",
