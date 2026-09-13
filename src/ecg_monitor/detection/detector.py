@@ -109,7 +109,9 @@ class QRSDetector:
             self.noise_peaks = [p - shift for p in self.noise_peaks if p - shift > -self.fs * 5]
             self.qrs_candidates = [p - shift for p in self.qrs_candidates if p - shift > -self.fs * 5]
 
-        threshold_i = self.npki + 0.25 * (self.spki - self.npki)
+        signal_threshold = self.npki + self.config.signal_threshold_weight * (self.spki - self.npki)
+        noise_threshold = self.config.noise_threshold_weight * signal_threshold
+        searchback_threshold = self.config.searchback_threshold_weight * signal_threshold
 
         # Only process local maxima that are in the new segment
         new_maxima = [p for p in local_maxima if p >= len(signal) - new_samples] if new_samples > 0 else local_maxima
@@ -123,7 +125,6 @@ class QRSDetector:
                 time_since_last = p_idx - self.qrs_candidates[-1]
 
                 if time_since_last > 1.66 * avg_rr:
-                    searchback_th = 0.5 * threshold_i
                     valid_sb_peaks = [
                         npk for npk in self.noise_peaks
                         if npk > self.qrs_candidates[-1] + self.refractory_samples
@@ -131,17 +132,19 @@ class QRSDetector:
 
                     if valid_sb_peaks:
                         best_sb_peak = max(valid_sb_peaks, key=lambda x: integrated[x])
-                        if integrated[best_sb_peak] > searchback_th:
+                        if integrated[best_sb_peak] > searchback_threshold:
                             self.qrs_candidates.append(best_sb_peak)
                             self.spki = 0.25 * integrated[best_sb_peak] + 0.75 * self.spki
-                            threshold_i = self.npki + 0.25 * (self.spki - self.npki)
+                            signal_threshold = self.npki + self.config.signal_threshold_weight * (self.spki - self.npki)
+                            noise_threshold = self.config.noise_threshold_weight * signal_threshold
+                            searchback_threshold = self.config.searchback_threshold_weight * signal_threshold
                             if len(self.qrs_candidates) > 1:
                                 self.recent_rr.append(self.qrs_candidates[-1] - self.qrs_candidates[-2])
                             self.last_qrs_idx = best_sb_peak
 
             # --- Forward processing of current peak ---
             if p_idx - self.last_qrs_idx >= self.refractory_samples:
-                if peak_val > threshold_i:
+                if peak_val > signal_threshold:
                     self.qrs_candidates.append(p_idx)
                     self.spki = 0.125 * peak_val + 0.875 * self.spki
                     if len(self.qrs_candidates) > 1:
@@ -149,14 +152,24 @@ class QRSDetector:
                     self.last_qrs_idx = p_idx
                 else:
                     self.npki = 0.125 * peak_val + 0.875 * self.npki
-                    self.noise_peaks.append(p_idx)
+                    if peak_val > noise_threshold:
+                        self.noise_peaks.append(p_idx)
 
-            threshold_i = self.npki + 0.25 * (self.spki - self.npki)
+            signal_threshold = self.npki + self.config.signal_threshold_weight * (self.spki - self.npki)
+            noise_threshold = self.config.noise_threshold_weight * signal_threshold
+            searchback_threshold = self.config.searchback_threshold_weight * signal_threshold
 
         # 6. Peak Refinement
         # Only refine and return candidates that belong to the newly processed segment
         new_candidates = [p for p in self.qrs_candidates if p >= len(signal) - new_samples] if new_samples > 0 else self.qrs_candidates
-        refined_peaks = [refine_peak(signal, idx, self.search_radius) for idx in new_candidates]
+        
+        if self.config.use_hilbert_refinement:
+            from ecg_monitor.detection.stages import compute_hilbert_envelope, refine_peak_hilbert
+            # We compute envelope on the derivative to emphasize slopes
+            envelope = compute_hilbert_envelope(deriv)
+            refined_peaks = [refine_peak_hilbert(signal, envelope, idx, self.search_radius) for idx in new_candidates]
+        else:
+            refined_peaks = [refine_peak(signal, idx, self.search_radius) for idx in new_candidates]
 
         refined_peaks = sorted(list(set(refined_peaks)))
         return refined_peaks

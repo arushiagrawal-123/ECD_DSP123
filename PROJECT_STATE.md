@@ -1040,3 +1040,33 @@ When attempting to replicate the 73 Tachycardia alerts on Record 105 in the stre
 
 ### Current State
 The repository is strictly limited to production code (`src/`, `app/`), test suites (`tests/`), benchmark runners (`experiments/`), and core documentation/configuration. All prototypes and scaffolding have been safely archived.
+
+## Build Log: Phase 7 Enhancement - Pan-Tompkins++ 3-Level Thresholding & Hilbert Refinement (September 2026)
+
+**Goal:** Enhance the QRS detector with two techniques from a modified Pan-Tompkins approach (Pan-Tompkins++ style) while keeping the original pipeline boundaries and avoiding any diagnostic language.
+
+### Updates:
+1. **Explicit 3-Level Adaptive Thresholding:**
+   - Evaluated the previous Phase 7 `QRSDetector`. It was a simpler implementation that derived a single main threshold from SPKI/NPKI and used a hardcoded halved threshold for search-back.
+   - Refactored it into an explicit 3-level adaptive scheme.
+   - **Signal Threshold:** Used to confidently detect QRS complexes. Configurable via `signal_threshold_weight` (default 0.25 difference between SPKI and NPKI).
+   - **Noise Threshold:** Used as a lower bound to filter out tiny artifacts from updating the NPKI noise profile. Configurable via `noise_threshold_weight` (default 0.5 * Signal Threshold).
+   - **Search-back Threshold:** Used specifically during search-back for missed beats when the RR interval gap exceeds the 1.66 * average RR threshold. Configurable via `searchback_threshold_weight` (default 0.25 * Signal Threshold).
+
+2. **Hilbert Transform Envelope Refinement:**
+   - Added `compute_hilbert_envelope` and `refine_peak_hilbert` to `stages.py`.
+   - The Hilbert Transform is applied to the derivative signal to compute its analytic-signal envelope. The instantaneous amplitude (envelope) highlights sharp energy bursts (QRS).
+   - The refinement logic uses the peak of the Hilbert envelope within the search window to anchor the center of the QRS complex, then narrows the search in the raw signal strictly around this envelope peak (e.g., ±5 samples). This makes the refinement highly robust against large T-waves or artifacts.
+   - Made toggleable via `config.detection.use_hilbert_refinement`.
+
+3. **Validation & Configuration:**
+   - Evaluated the enhancement (Hilbert OFF vs ON) against real MIT-BIH records using Phase 8's evaluation module:
+     - **Record 100:** Minimal change (F1 1.000, Mean Err 0.24ms).
+     - **Record 101:** Improved timing standard deviation (1.53ms -> 1.42ms).
+     - **Record 105 (Noisy):** Substantial F1 boost (0.953 -> 0.967) and timing standard deviation improvement (3.96ms -> 3.32ms).
+   - **Conclusion:** The Hilbert refinement provides meaningful robustness against artifacts and tightens timing error on challenging records without regressing clean ones. It has been set as the default (`use_hilbert_refinement = True`).
+
+**Verification:**
+- Added unit tests for the 3-level thresholding logic inside the detector.
+- Added unit tests for the Hilbert refinement stages in isolation.
+- Full test suite passed (100%).

@@ -339,6 +339,18 @@ class DetectionConfig(BaseModel):
     threshold_learning_beats: Annotated[int, Field(gt=0)] = Field(
         default=8, description="Number of initial beats used to initialize thresholds."
     )
+    signal_threshold_weight: Annotated[float, Field(gt=0.0)] = Field(
+        default=0.25, description="Weight for SPKI-NPKI difference to compute signal threshold."
+    )
+    noise_threshold_weight: Annotated[float, Field(gt=0.0)] = Field(
+        default=0.5, description="Multiplier for signal threshold to compute noise threshold."
+    )
+    searchback_threshold_weight: Annotated[float, Field(gt=0.0)] = Field(
+        default=0.25, description="Multiplier for signal threshold to compute searchback threshold."
+    )
+    use_hilbert_refinement: bool = Field(
+        default=True, description="Whether to use Hilbert transform envelope for peak refinement."
+    )
 
 
 # Acquisition config

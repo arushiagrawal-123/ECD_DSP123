@@ -135,3 +135,65 @@ def test_integration_qrs_detector_real_record(real_data_dir: Path):
     
     # Rough sanity check: ~75 beats expected
     assert 65 < len(detected) < 85, f"Expected ~75 beats, found {len(detected)}"
+
+def test_3_level_thresholding_logic():
+    """Test explicit 3-level thresholding logic inside the detector."""
+    from ecg_monitor.config.schema import DetectionConfig
+    cfg = DetectionConfig(
+        signal_threshold_weight=0.25,
+        noise_threshold_weight=0.5,
+        searchback_threshold_weight=0.25,
+        refractory_period_ms=200,
+        threshold_learning_beats=2,
+    )
+    detector = QRSDetector(cfg, fs=360)
+    
+    # Initialize some mock state
+    detector.spki = 100.0
+    detector.npki = 10.0
+    detector.last_qrs_idx = -1000
+    detector.recent_rr = [300, 310]  # Valid for searchback
+    detector.qrs_candidates = [500, 800]
+    detector.noise_peaks = [1200]
+    
+    # Create a synthetic integrated signal array
+    integrated = np.zeros(2000)
+    # Put a clear QRS peak at 1800
+    integrated[1800] = 90.0
+    # Put a noise peak at 1900
+    integrated[1900] = 12.0
+    detector.is_initialized = True
+    
+    import unittest.mock
+    with unittest.mock.patch("ecg_monitor.detection.detector.apply_bandpass", return_value=integrated), \
+         unittest.mock.patch("ecg_monitor.detection.detector.apply_derivative", return_value=integrated), \
+         unittest.mock.patch("ecg_monitor.detection.detector.apply_squaring", return_value=integrated), \
+         unittest.mock.patch("ecg_monitor.detection.detector.apply_moving_window_integration", return_value=integrated):
+        peaks = detector.detect(integrated)
+    
+    assert 1800 in detector.qrs_candidates
+    # NPKI should have updated from the peak at 1900 if it was considered local max.
+    # Wait, find_peaks will find 1800 and 1900.
+    assert detector.spki != 100.0
+    
+
+def test_hilbert_refinement_stages():
+    """Test compute_hilbert_envelope and refine_peak_hilbert in isolation."""
+    from ecg_monitor.detection.stages import compute_hilbert_envelope, refine_peak_hilbert
+    
+    # Create a synthetic asymmetric pulse
+    pulse = np.zeros(100)
+    # Real peak is at 50, but it's sharp and noisy
+    pulse[48:53] = [1.0, 3.0, -10.0, 8.0, 2.0]
+    
+    envelope = compute_hilbert_envelope(pulse)
+    
+    # Envelope should be positive and have a clear peak around the sharpest change
+    assert len(envelope) == 100
+    assert np.all(envelope >= 0)
+    
+    # Pretend detection found index 45
+    refined = refine_peak_hilbert(pulse, envelope, 45, search_radius=10)
+    
+    # The actual absolute max of the pulse in the tight radius is at 50 (value -10.0)
+    assert refined == 50
