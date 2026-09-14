@@ -9,21 +9,35 @@
 
 ## Current State
 
-Finished. Core pipeline (Phases 1-15) is fully implemented, rigorously tested (86% coverage), and documented. Phase 16 (FastAPI/React/Docker/CI) is an optional polish phase that was intentionally skipped by decision. Project is complete and ready for submission/viva.
+The core ECG analysis pipeline (Phases 1–15) is fully implemented, strictly typed, and rigorously tested (100% coverage). The originally planned Phase 16 (FastAPI/React/Docker/CI) was skipped by decision in favor of completing a comprehensive dashboard bugfix pass (Issues 1–6) and a full project audit, both of which are now complete. Additionally, the Phase 7 enhancement — a Pan-Tompkins++ style explicit 3-level adaptive thresholding upgrade with Hilbert Transform envelope refinement — has been implemented, validated, and merged into the main detector, showing improved robustness on noisy records. The project is fully mature and ready for final submission or evaluation.
 
 ---
 
-## Project Purpose
+## Project Summary
 
-This is an educational, rule-based signal-processing research platform that ingests
-standard PhysioNet/MIT-BIH ECG recordings, simulates realistic noise artifacts,
-applies a tiered preprocessing pipeline, detects QRS complexes via a custom
-Pan-Tompkins-inspired algorithm, and produces structured heart-rate and variability
-metrics together with rule-based candidate events (tachycardia, bradycardia,
-irregular rhythm). All flagged events are **candidates for human review only** — this
-platform is not a certified medical device and makes no diagnostic claims. It is
-intended solely as an engineering demonstration of classical DSP techniques applied
-to biomedical signals.
+**What it is:**
+An educational, rule-based signal-processing research platform for analyzing physiological ECG data. It evaluates standard PhysioNet/MIT-BIH ECG recordings without relying on any black-box AI/ML models, strictly utilizing classical digital signal processing (DSP) techniques.
+
+**What it does end-to-end:**
+1. **Acquisition:** Loads PhysioNet records and their expert annotations via `wfdb`.
+2. **Simulation:** Injects realistic noise artifacts (baseline wander, powerline interference, motion, EMG) for robustness testing.
+3. **Preprocessing:** Applies a tiered filter pipeline (Basic, Standard, Enhanced with wavelet denoising) to clean the signal.
+4. **Quality Assessment:** Computes SNR, RMSE, and correlation against clean references to categorize signal quality as GOOD, FAIR, or POOR.
+5. **Detection:** Extracts QRS complexes (R-peaks) using a highly robust custom Pan-Tompkins++ algorithm with a 3-level adaptive threshold and Hilbert transform envelope refinement.
+6. **Feature Extraction:** Computes instantaneous heart rate (HR) and heart rate variability (HRV) metrics (SDNN, RMSSD, CoV).
+7. **Alert Engine:** Continuously evaluates RR intervals against clinical rules to flag candidate events (e.g., Tachycardia, Bradycardia, Irregular Rhythm). Signals classified as POOR quality proactively suppress clinical alerts to avoid false positives, instead flagging a "Low Signal Quality" event.
+8. **Reporting & Dashboard:** Provides a real-time streaming simulation UI via Streamlit and generates comprehensive PDF/CSV session reports.
+
+**Validated Results:**
+* **Detection Accuracy:** The custom detector achieves an F1 score of ~0.984 with highly accurate timing error (-0.96 ms), performing competitively against production-grade libraries like NeuroKit2 and BioSPPy.
+* **Robustness:** Exceptional resilience against baseline wander and powerline interference (retaining ~0.984 F1 even at 150% noise amplitude). Hilbert refinement specifically tightens timing error on noisy records (e.g. Record 105 F1 boosts to 0.967). High-amplitude motion artifacts remain the primary failure mode.
+* **Alert Engine:** Successfully detects bradycardia and tachycardia episodes accurately without raising false alarms on clean physiological baselines.
+
+**Tech Stack:**
+Python 3.12+, Hatchling, Pydantic (data contracts), NumPy/SciPy (DSP), Streamlit (dashboard), ReportLab (PDFs), pytest (testing).
+
+**Known Limitations:**
+The system is an educational engineering prototype. Alert flags are strictly rule-based candidates meant for human review; it is not a certified medical device and makes no diagnostic claims. The dataset parser currently assumes standard single-segment MIT-BIH `.atr` annotations.
 
 ---
 
@@ -39,7 +53,7 @@ Build order below maps directly to implementation phases:
 | 4  | **Preprocessing** | Three tiers: Basic (bandpass), Standard (bandpass+notch), Enhanced (baseline corr+notch+bandpass+wavelet) |
 | 5  | **Signal Quality** | SNR, RMSE, correlation vs clean reference → combined score → GOOD/FAIR/POOR |
 | 6  | **FFT Analysis** | Frequency-domain magnitude spectra before and after filtering |
-| 7  | **QRS Detection** | Custom Pan-Tompkins-inspired detector (NumPy/SciPy only, no black-box peak finder) |
+| 7  | **QRS Detection** | Custom Pan-Tompkins++ detector with 3-level adaptive thresholding and Hilbert Transform envelope refinement |
 | 8  | **Evaluation** | Match detected peaks to reference annotations (tolerance window) → Sensitivity, PPV, F1, timing error |
 | 9  | **Heart Rate / HRV** | Instantaneous/avg/min/max HR, RR intervals, SDNN, RMSSD, RR CoV |
 | 10 | **Alert Engine** | Rule-based tachycardia/bradycardia/irregular-RR candidates; POOR quality → "Low Signal Quality" event |
@@ -47,8 +61,8 @@ Build order below maps directly to implementation phases:
 | 12 | **Streaming Simulation** | Chunk-fed replay; latency/throughput/real-time factor tracking |
 | 13 | **Reporting** | Auto-generated PDF (ReportLab), CSV, JSON per experiment/session |
 | 14 | **Streamlit Dashboard** | Record/config selection, ECG plots, HR/quality display, FFT, alerts log, experiments page |
-| 15 | **Test Suite** | pytest across all modules |
-| 16 | **Optional Polish** | FastAPI endpoint, Docker, GitHub Actions CI |
+| 15 | **Test Suite & Audit** | 100% pytest coverage across all modules, comprehensive bugfix pass (Issues 1-6) |
+| 16 | **Project Cleanup** | Removal of dead code, old prototypes, unneeded artifacts; FastAPI/React polish skipped by decision |
 
 ---
 
@@ -69,14 +83,26 @@ class ECGPackage(BaseModel):
     reference_annotations: ReferenceAnnotations  # sample_indices: list[int], symbols: list[str]
 ```
 
-### AnalysisResult
+### ExperimentResult
 
 ```python
-class AnalysisResult(BaseModel):
-    r_peaks: list[int]
-    evaluation: DetectionEvaluation  # sensitivity, ppv, f1: float; timing_error_ms: TimingErrorStats
-    heart_rate: HeartRateStats       # instantaneous: list[float]; average, min, max: float
-    rr_variability: RRVariability    # sdnn, rmssd, cov: float
+class ExperimentResult(BaseModel):
+    timestamp: datetime
+    config: ExperimentConfig
+    snr_db: float | None
+    rmse: float | None
+    correlation: float | None
+    sensitivity: float
+    ppv: float
+    f1: float
+    timing_error_mean_ms: float
+    timing_error_std_ms: float
+    hr_average_bpm: float
+    hrv_sdnn_ms: float
+    quality: SignalQuality | None
+    hr_stats: HeartRateStats | None
+    hrv_stats: RRVariability | None
+    detected_peaks: list[int]
     alerts: list[AlertEvent]
 ```
 
@@ -95,7 +121,7 @@ class AlertEvent(BaseModel):
     parameters: dict[str, Any]  # Rule-specific values used
 ```
 
-All models live in `src/ecg_monitor/core/models.py`.
+All models live in `src/ecg_monitor/core/models.py` or `src/ecg_monitor/experiments/models.py`.
 
 ---
 
@@ -107,7 +133,8 @@ All models live in `src/ecg_monitor/core/models.py`.
 | `src/ecg_monitor/artifacts/` | Noise and artifact injection (baseline wander, powerline, EMG, motion) |
 | `src/ecg_monitor/preprocessing/` | Tiered filter pipelines: Basic, Standard, Enhanced (wavelet) |
 | `src/ecg_monitor/quality/` | SNR, RMSE, correlation computation; GOOD/FAIR/POOR labelling |
-| `src/ecg_monitor/detection/` | Custom Pan-Tompkins-inspired QRS / R-peak detector |
+| `src/ecg_monitor/frequency/` | Frequency-domain magnitude spectra and spectral noise quantification |
+| `src/ecg_monitor/detection/` | Custom Pan-Tompkins++ QRS / R-peak detector |
 | `src/ecg_monitor/evaluation/` | Peak-matching, Sensitivity/PPV/F1, timing-error statistics |
 | `src/ecg_monitor/heart_rate/` | RR interval extraction, HR stats, SDNN/RMSSD/CoV |
 | `src/ecg_monitor/alerts/` | Rule-based alert engine; `AlertEvent` generation |
@@ -115,13 +142,24 @@ All models live in `src/ecg_monitor/core/models.py`.
 | `src/ecg_monitor/reporting/` | PDF (ReportLab), CSV, JSON report generation |
 | `src/ecg_monitor/visualization/` | Matplotlib/Plotly plot helpers used by dashboard and reports |
 | `src/ecg_monitor/config/` | Pydantic config schema; `load_config()` from YAML |
-| `src/ecg_monitor/core/` | Canonical Pydantic data models (ECGPackage, AnalysisResult, AlertEvent) |
+| `src/ecg_monitor/core/` | Canonical Pydantic data models (ECGPackage, AlertEvent) |
+| `src/ecg_monitor/experiments/` | Experiment configurations and result models |
 | `app/` | Streamlit dashboard entry point and page modules |
 | `experiments/` | Experiment runner scripts; outputs go to `results/` |
 | `tests/` | pytest suite mirroring `src/ecg_monitor/` structure |
 | `data/` | Raw PhysioNet records (git-ignored; populated at runtime via `wfdb`) |
 | `results/` | Generated PDFs, CSVs, JSONs (git-ignored) |
-| `notebooks/` | Exploratory Jupyter notebooks (not part of production pipeline) |
+
+---
+
+## Open Questions / Flags
+
+* **OQ-1 — `SignalQuality` placeholder NaN values:** **Resolved** (Phase 5). `score_signal()` now fully computes metrics.
+* **OQ-2 — Multi-segment MIT-BIH records:** **Still Open**. `wfdb.rdrecord` defaults to single segment; handling true multi-segment records (e.g. 207) is deferred.
+* **OQ-3 — Annotation file for non-MIT-BIH databases:** **Still Open**. Downloader assumes `.atr`; `AcquisitionConfig.annotation_ext` needs explicit hook for other datasets.
+* **OQ-4 — Config schema field rename (`probability` → `activity_probability`):** **Resolved** (Phase 3). Config and schema updated to disambiguate.
+* **OQ-5 — EMG activity gating:** **Still Open**. Currently uses a single contiguous block; random scattered bursts deferred if needed for future experiments.
+* **OQ-6 — Signal Quality empirical thresholds:** **Resolved** (Phase 11). Experimental sweeps confirmed thresholds correlate correctly with QRS detector degradation.
 
 ---
 
@@ -308,68 +346,6 @@ All models live in `src/ecg_monitor/core/models.py`.
 
 ---
 
-## Open Questions / Flags
-
-### OQ-1 — `SignalQuality` placeholder NaN values *(Phase 2, unresolved)*
-
-The contract defines `snr_db`, `rmse`, and `correlation` as `float`. At acquisition
-time (before Phase 5), these are meaningless. The chosen approach is to store
-`float("nan")` with `label="UNSET"`. This is valid Python/Pydantic, propagates
-clearly through serialization (JSON → `NaN`), and is detectable by callers via
-`math.isnan()`. **No contract change needed.** Flag retained for awareness.
-
-### OQ-2 — Multi-segment MIT-BIH records *(Phase 2, unresolved)*
-
-A small number of MIT-BIH records (e.g. 207, 217) contain multi-frame signal data
-where `wfdb.rdrecord` may return a `MultiRecord`. The current loader calls
-`rdrecord` with default `m2s=True` (wfdb's default), which auto-converts to a single
-`Record`. If any record fails due to a multi-segment incompatibility, the loader will
-raise a descriptive `RuntimeError`. Full multi-segment handling (if needed) is deferred
-to a later phase.
-
-### OQ-3 — Annotation file for non-MIT-BIH databases *(Phase 2, unresolved)*
-
-`ensure_record_local` assumes `.atr` is always present. If a different database or
-annotation extension is used, the downloader will not fetch the right file. The
-`AcquisitionConfig.annotation_ext` field is the hook to configure this; the downloader
-will need a minor extension to support non-`.atr` extensions. Flagged for Phase 11
-(experiment runner) when other datasets may be introduced.
-
-### OQ-4 — Config schema field rename: `EMGNoiseConfig.probability` → `activity_probability`
-
-Phase 1 scaffolding named the EMG activation field `probability`. Phase 3 renamed it
-to `activity_probability` to disambiguate from `MotionArtifactConfig.probability` and
-to better reflect semantics (fraction of signal duration, not per-sample rate). The
-`config.yaml` has been updated. Any code referencing the old field name must be updated.
-**Resolved in Phase 3.** Retained as a flag for any future sessions to be aware of.
-
-### OQ-5 — EMG activity gating: contiguous block vs random scatter
-
-The Phase 3 EMG generator uses a single contiguous active block (one sustained
-muscle-contraction episode). Real EMG may consist of multiple shorter bursts at random
-positions. The current implementation is a reasonable simplification for an educational
-prototype. If more realistic intermittent EMG is needed (Phase 11 experiments), the
-activity mask can be replaced with a Bernoulli mask per sample, or multiple shorter
-blocks. Flagged for future consideration only.
-
----
-
-## Current State
-
-Phase 3 complete. The artifact simulation module is fully built:
-- Four generators: `baseline_wander`, `powerline`, `emg`, `motion` — all config-driven,
-  reproducible via seed, returning additive noise arrays.
-- Combiner `add_noise()` dispatches to generators with per-type stable child seeds.
-- Config schema extended: `BaselineWanderConfig` now uses freq range + n_components;
-  `EMGNoiseConfig` has spectral shaping params + renamed `activity_probability`;
-  `PowerlineConfig` has `n_harmonics`; `MotionArtifactConfig` has `frequency_hz`.
-- `config.yaml` updated to match.
-- 40+ unit tests across all generators and the combiner; spectral correctness
-  verified via Welch PSD.
-- `notebooks/sanity_check_artifacts.py` for visual verification.
-
----
-
 ### 2026-09-10 — Phase 4: Preprocessing / Filtering Pipelines
 
 **Created / Modified:**
@@ -448,19 +424,6 @@ Phase 3 complete. The artifact simulation module is fully built:
 
 - **Two baseline correction methods** — `'highpass'` (default, fast, linear) and `'median'`
   (no edge ringing, better for short segments). Selection is config-driven.
-
----
-
-## Current State
-
-Phase 4 complete. The preprocessing module is fully built:
-- Four building blocks: `apply_bandpass`, `apply_notch`, `apply_baseline_correction`,
-  `apply_wavelet_denoise` — each individually testable with its own frequency-response function.
-- Three composed pipelines: Basic, Standard, Enhanced — all assembled purely from building blocks.
-- `PreprocessingTier` enum + `preprocess()` dispatcher + `frequency_responses()` for dashboard.
-- Config schema extended with 6 new `FilterConfig` fields; `config.yaml` updated.
-- 41 unit tests (88 total across Phases 2–4), all green. Integration test deselected by default.
-- `notebooks/sanity_check_preprocessing.py` for visual verification.
 
 ---
 
@@ -575,20 +538,6 @@ Phase 4 complete. The preprocessing module is fully built:
 
 ---
 
-## Current State
-
-Phase 5 complete. The signal quality module is fully built:
-- **Reference-based path**: `compute_snr`, `compute_rmse`, `compute_correlation` → `label_quality`
-  (majority vote) → `score_signal` → `SignalQuality` Pydantic model.
-- **Reference-free path**: `detect_flatline`, `detect_clipping` (run-length), `estimate_spectral_noise`
-  → `label_quality_referencefree` (entirely separate from reference-based).
-- **OQ-1 resolved**: `SignalQuality` is now fully populated by `score_signal()`.
-- Config schema extended: 4 new `QualityThresholds` reference-free fields.
-- 54 unit tests (176 total across Phases 2–5), all green. Integration test deselected by default.
-- `notebooks/sanity_check_quality.py` for terminal verification.
-
----
-
 ### 2026-09-11 — Phase 6: Frequency Analysis Module
 
 **Created / Modified:**
@@ -619,16 +568,6 @@ Phase 5 complete. The signal quality module is fully built:
 - **Module placement**: Built in `src/ecg_monitor/frequency/` instead of overloading `preprocessing/` since these are read-only analysis tools, not signal transformations. The directory is named `frequency` rather than `fft` to encompass potential future additions like wavelet analysis or autoregressive modeling without name friction.
 - **PSD for Quantification**: `compute_band_energy` uses the Welch PSD rather than raw FFT magnitudes to provide a more stable and robust measure of power.
 - **Reusing config**: The quantification tools pull their target bands directly from `ECGMonitorConfig.noise` boundaries, ensuring perfect sync between noise simulation and analysis logic.
-
----
-
-## Current State
-
-Phase 6 complete. The frequency analysis module provides:
-- Core spectral generation: `compute_spectrum` (FFT dB), `compute_psd` (Welch).
-- Band extraction: `get_baseline_wander_energy`, `get_powerline_energy`, `dominant_frequency`.
-- Batch comparison: `compare_spectra`.
-- All tests green, fully independent of preprocessing filters (read-only analysis).
 
 ---
 
@@ -671,16 +610,6 @@ Phase 6 complete. The frequency analysis module provides:
 
 ---
 
-## Current State
-
-Phase 7 complete. The QRS detection module is fully functional:
-- Configurable Pan-Tompkins algorithmic pipeline.
-- High-fidelity peak refinement in the original signal domain.
-- Handles search-back for missed beats.
-- Fully tested against synthetic and real data.
-
----
-
 ### 2026-09-11 — Phase 8: Evaluation / Validation Module
 
 **Created / Modified:**
@@ -700,12 +629,6 @@ Phase 7 complete. The QRS detection module is fully functional:
 
 ---
 
-## Current State
-
-Phase 8 complete. The evaluation module can formally validate QRS detector outputs against expert annotations.
-
----
-
 ### 2026-09-11 — Phase 9: Heart Rate / RR Interval Module
 
 **Created / Modified:**
@@ -722,12 +645,6 @@ Phase 8 complete. The evaluation module can formally validate QRS detector outpu
 
 ---
 
-## Current State
-
-Phase 9 complete. The Heart Rate & HRV extraction module correctly maps R-peaks to clinical-style interval stats with robust artifact handling.
-
----
-
 ### 2026-09-11 — Phase 10: Alert Engine Module
 
 **Created / Modified:**
@@ -739,12 +656,6 @@ Phase 9 complete. The Heart Rate & HRV extraction module correctly maps R-peaks 
 **Design Decisions:**
 - **Stateful Engine vs Stateless Rules:** A hybrid approach was used. The rules themselves are independently testable stateless functions taking an array of recent RR intervals. However, the top-level `AlertEngine` is a class. This class maintains the sliding window of recent RR intervals (buffering) to allow seamless "N consecutive beats" tracking across chunk/batch boundaries, preparing the architecture for the Phase 12 streaming engine.
 - **Centralized Quality Gate:** `AlertEngine.step()` enforces the quality gate before any HR rules are executed. If `current_quality == "POOR"`, the HR rules are bypassed entirely, and a debounced `low_signal_quality` alert is yielded instead.
-
----
-
-## Current State
-
-Phase 10 complete. The rule-based alert engine successfully generates non-diagnostic candidate alerts and respects the centralized signal quality gate.
 
 ---
 
@@ -770,12 +681,6 @@ Phase 10 complete. The rule-based alert engine successfully generates non-diagno
 
 ---
 
-## Current State
-
-Phase 11 complete. The project is fully wired end-to-end, and objective experiments confirm high robustness and competitive detection performance.
-
----
-
 ### 2026-09-11 — Phase 12: Streaming / Real-Time Replay Module
 
 **Created / Modified:**
@@ -795,12 +700,6 @@ Phase 11 complete. The project is fully wired end-to-end, and objective experime
 
 ---
 
-## Current State
-
-Phase 12 complete. The simulated real-time streaming engine effectively buffers data, detects peaks dynamically, and issues HR updates and alerts with extreme performance (140x real-time).
-
----
-
 ### 2026-09-11 — Phase 13: Reporting Module
 
 **Created / Modified:**
@@ -813,12 +712,6 @@ Phase 12 complete. The simulated real-time streaming engine effectively buffers 
 **Design Decisions:**
 - **Output Folder Convention:** Standardized all reports to be dumped in `results/<session_id>/` where the ID is timestamp-based (e.g., `session_100_20260911_104850`). Inside, standard filenames (`summary.pdf`, `metrics.csv`, `events.csv`, `rr_intervals.csv`, `configuration.json`) and a `plots/` directory form a predictable contract for the upcoming Dashboard phase.
 - **Language Guardrails:** The disclaimer explicitly forbidding clinical reliance was hardcoded into the PDF footer style with red text to ensure it cannot be missed. A unit test guarantees regressions won't sneak banned words into the summary.
-
----
-
-## Current State
-
-Phase 13 complete. The reporting module flawlessly translates pipeline structures into a pristine, shareable directory of PDFs, CSVs, and JSONs, bounded by strict clinical language guardrails.
 
 ---
 
@@ -835,20 +728,6 @@ Phase 13 complete. The reporting module flawlessly translates pipeline structure
 **Design Decisions:**
 - **Page Composition Approach:** Rather than relying on Streamlit's native `pages/` directory auto-discovery, I used manual composition via `st.sidebar.radio` within `app/main.py` referencing distinct module files under `app/pages/`. This enables clean sharing of the loaded `ECGPackage` in-memory across tabs without leaning excessively on `st.session_state` serialization.
 - **Real-Time Replay UI:** For the streaming page, I chose an explicitly manual "Step Forward (1 Chunk)" button rather than fighting Streamlit's implicit rerun execution loop with async sleepers. The manual button increments an index in `st.session_state` and invokes `engine.step()` precisely once per click. This is by far the most robust, predictable, and transparent way to demonstrate streaming state in a Streamlit context.
-
----
-
-## Current State
-
-Phase 14 complete. The Streamlit Dashboard is fully assembled, providing a thin, responsive, and robust presentation layer over the meticulously tested underlying core modules. End-to-end functionality was manually verified via `streamlit run`.
-
----
-
-## Open Questions / Flags (updated)
-
-*(Previous open questions OQ-1 through OQ-5 unchanged; OQ-1 is now resolved. OQ-6 is resolved by Phase 11 experimental data).*
-
-No current open flags.
 
 ---
 
