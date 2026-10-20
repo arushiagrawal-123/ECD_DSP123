@@ -1,0 +1,13 @@
+# Append this to the existing config.yaml. Do not overwrite.
+# All fields are optional; the project runs without this section.
+
+classification:
+  enabled: false                       # flip to true after dropping the .onnx in models/
+  model_path: "models/beat_classifier.onnx"
+  confidence_threshold: 0.5            # beats below this confidence shown as "uncertain" in the dashboard
+  batch_size: 64                       # ONNX inference batch size
+  aami_classes: ["N", "S", "V", "F", "Q"]
+  windowing:
+    pre_r_samples: 100                 # must match training; see src/ecg_monitor/learned/windowing.py
+    post_r_samples: 260
+    training_fs: 360
