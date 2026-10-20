@@ -1,0 +1,48 @@
+{
+  "config": {
+    "fs": 360,
+    "window_samples": 360,
+    "pre_r_samples": 100,
+    "post_r_samples": 260,
+    "aami_classes": [
+      "N",
+      "S",
+      "V",
+      "F",
+      "Q"
+    ],
+    "ssl_epochs": 15,
+    "ssl_temperature": 0.1,
+    "ssl_batch_size": 256,
+    "ft_epochs": 5
+  },
+  "ssl_final_loss": 0.35548209769641936,
+  "classification_results": {
+    "supervised_scratch_10pct": 0.2558731461278813,
+    "linear_probe_10pct": 0.33628251644622986,
+    "full_finetune_10pct": 0.24393264203519865,
+    "supervised_scratch_100pct": 0.2613081596752174,
+    "linear_probe_100pct": 0.3047536762159077,
+    "full_finetune_100pct": 0.35879817966572625
+  },
+  "noise_robustness": {
+    "amp_0.0": 0.35879817966572625,
+    "amp_0.3": 0.35071298679816115,
+    "amp_0.7": 0.33392641995792965,
+    "amp_1.0": 0.3065118845715519
+  },
+  "train_class_distribution": [
+    45837,
+    943,
+    3788,
+    414,
+    8
+  ],
+  "test_class_distribution": [
+    44234,
+    1837,
+    3220,
+    388,
+    7
+  ]
+}
