@@ -23,6 +23,7 @@ dependencies = [
     "reportlab>=4.2",
     "neurokit2>=0.2",
     "biosppy==2.2.4",
+    "onnxruntime>=1.17",
 ]
 
 [project.optional-dependencies]
