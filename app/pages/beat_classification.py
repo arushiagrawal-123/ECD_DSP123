@@ -1,14 +1,12 @@
 """Streamlit page: live arrhythmia classification using the SSL-pretrained model.
 
-Hook into app/main.py by adding to the page registry:
+Signature matches the other pages in this project: render(pkg, config, tier).
+Also falls back to st.session_state["ecg_package"] if main.py doesn't pass pkg.
 
-    from app.pages import beat_classification
-    PAGES["Beat Classification"] = beat_classification.render
-
-The page loads an ECGPackage from the session, runs the existing R-peak detector,
-runs the ONNX model per beat, and overlays color-coded class labels on the ECG plot.
-Also shows per-class counts, confidence histogram, and pre-computed training/evaluation
-metrics loaded from models/metrics.json.
+Shows:
+  - ECG plot with per-beat AAMI class markers
+  - Beat distribution and confidence histogram
+  - Offline training/evaluation metrics loaded from models/metrics.json
 """
 
 from __future__ import annotations
@@ -22,7 +20,21 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from ecg_monitor.detection import detect_r_peaks  # existing detector in the project
+# Safe import cascade so the page still loads if the detector module name differs
+try:
+    from ecg_monitor.detection.detector import QRSDetector, detect_r_peaks
+except ImportError:
+    try:
+        from ecg_monitor.detection.detector import QRSDetector
+        detect_r_peaks = None
+    except ImportError:
+        try:
+            from ecg_monitor.detection import detect_r_peaks
+            QRSDetector = None
+        except ImportError:
+            detect_r_peaks = None
+            QRSDetector = None
+
 from ecg_monitor.learned import BeatClassifier
 from ecg_monitor.learned.classifier import AAMI_CLASSES, AAMI_LABEL_DESCRIPTIONS
 
@@ -54,6 +66,58 @@ def _load_metrics() -> dict | None:
         return None
 
 
+def _get_signal(pkg):
+    """Return (signal_array, sampling_rate). Tries filtered_signal, then raw_signal."""
+    sig = getattr(pkg, "filtered_signal", None)
+    if sig is None:
+        sig = getattr(pkg, "raw_signal", None)
+    fs = getattr(pkg, "sampling_rate", 360)
+    if sig is None:
+        return None, fs
+    return np.asarray(sig), fs
+
+
+def _run_detector(signal: np.ndarray, fs: int, pkg) -> list[int]:
+    """Return a list of R-peak sample indices. Tries pre-computed, project detector,
+    then falls back to scipy.find_peaks."""
+    # Pre-computed on the loaded package
+    for attr in ("r_peaks", "detected_peaks"):
+        peaks = getattr(pkg, attr, None)
+        if peaks is not None and len(peaks) > 0:
+            return [int(p) for p in peaks]
+
+    # Project-provided function
+    if detect_r_peaks is not None:
+        try:
+            return [int(p) for p in detect_r_peaks(signal, fs=fs)]
+        except TypeError:
+            try:
+                return [int(p) for p in detect_r_peaks(signal, fs)]
+            except Exception:
+                pass
+
+    # Project-provided class
+    if QRSDetector is not None:
+        try:
+            detector = QRSDetector(sampling_rate=fs)
+            res = detector.detect(signal)
+            peaks = getattr(res, "r_peaks", res)
+            if hasattr(peaks, "tolist"):
+                peaks = peaks.tolist()
+            return [int(p) for p in peaks]
+        except Exception:
+            pass
+
+    # scipy fallback
+    from scipy.signal import find_peaks
+    detected, _ = find_peaks(
+        signal,
+        distance=int(0.25 * fs),
+        prominence=float(np.std(signal) * 0.6),
+    )
+    return detected.tolist()
+
+
 def render(pkg=None, config=None, tier=None):
     st.title("Beat Classification (Learned)")
     st.caption(
@@ -65,62 +129,70 @@ def render(pkg=None, config=None, tier=None):
     # Allow package passed from main.py or fallback to session_state
     if pkg is None:
         pkg = st.session_state.get("ecg_package")
-
     if pkg is None:
-        st.info("Load a record from the Overview page first.")
+        st.info("No record loaded. Pick one from the sidebar.")
+        return
+
+    signal, fs = _get_signal(pkg)
+    if signal is None:
+        st.error("Loaded record has no signal attribute (expected filtered_signal or raw_signal).")
         return
 
     clf = _load_model()
     if not clf.available:
         st.error(
             f"Model unavailable: {getattr(clf, 'reason', 'unknown reason')}\n\n"
+            f"Expected at: `{MODEL_PATH.resolve()}`\n\n"
             "Train the model on Kaggle (see `kaggle_train_ssl_ecg.py`) and drop "
             "`beat_classifier.onnx` into the `models/` folder, then reload."
         )
         return
 
-    # R-peak detection reuses the project's existing detector so the demo is honest
-    # about the full pipeline running end-to-end
     with st.spinner("Detecting R-peaks..."):
-        peaks = detect_r_peaks(pkg.filtered_signal, fs=pkg.sampling_rate)
+        peaks = _run_detector(signal, fs, pkg)
+    st.caption(f"Detected {len(peaks)} R-peaks at {fs} Hz.")
+
+    if not peaks:
+        st.warning("No R-peaks found in this signal. Check preprocessing tier or record.")
+        return
 
     with st.spinner(f"Classifying {len(peaks)} beats..."):
-        preds = clf.predict(pkg.filtered_signal, peaks, fs=pkg.sampling_rate)
+        preds = clf.predict(signal, peaks, fs=fs)
 
     if not preds:
         st.warning("No beats could be classified (all peaks too close to signal edges).")
         return
 
-    # Window selector so the plot stays readable on long records
-    total_sec = len(pkg.filtered_signal) / pkg.sampling_rate
+    # ------------------------------------------------------------------------
+    # ECG viewer with per-beat class markers
+    # ------------------------------------------------------------------------
+    total_sec = len(signal) / fs
     col_a, col_b = st.columns(2)
     with col_a:
         start_sec = st.slider("Start time (s)", 0.0, max(0.0, total_sec - 10.0), 0.0, step=1.0)
     with col_b:
         window_sec = st.slider("Window length (s)", 5.0, 60.0, 15.0, step=1.0)
 
-    s_start = int(start_sec * pkg.sampling_rate)
-    s_end = int(min(len(pkg.filtered_signal), (start_sec + window_sec) * pkg.sampling_rate))
-    t = np.arange(s_start, s_end) / pkg.sampling_rate
+    s_start = int(start_sec * fs)
+    s_end = int(min(len(signal), (start_sec + window_sec) * fs))
+    t = np.arange(s_start, s_end) / fs
 
-    # Plot ECG with per-beat class markers
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=t,
-        y=pkg.filtered_signal[s_start:s_end],
+        y=signal[s_start:s_end],
         mode="lines",
         name="ECG",
         line=dict(color="#2c3e50", width=1.2),
     ))
 
-    # Markers grouped by class so the legend reads cleanly
     for cls in AAMI_CLASSES:
         pts = [p for p in preds if p.label == cls and s_start <= p.peak_index < s_end]
         if not pts:
             continue
         fig.add_trace(go.Scatter(
-            x=[p.peak_index / pkg.sampling_rate for p in pts],
-            y=[pkg.filtered_signal[p.peak_index] for p in pts],
+            x=[p.peak_index / fs for p in pts],
+            y=[signal[p.peak_index] for p in pts],
             mode="markers",
             name=f"{cls} ({AAMI_LABEL_DESCRIPTIONS[cls]})",
             marker=dict(color=CLASS_COLORS[cls], size=10, symbol="circle",
@@ -131,14 +203,16 @@ def render(pkg=None, config=None, tier=None):
 
     fig.update_layout(
         xaxis_title="Time (s)",
-        yaxis_title="Amplitude (mV, normalized)",
+        yaxis_title="Amplitude (normalized)",
         height=400,
         margin=dict(l=40, r=20, t=40, b=40),
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Summary panels
+    # ------------------------------------------------------------------------
+    # Beat distribution + confidence histogram
+    # ------------------------------------------------------------------------
     st.markdown("### Beat distribution")
     counts = {c: 0 for c in AAMI_CLASSES}
     for p in preds:
@@ -162,7 +236,6 @@ def render(pkg=None, config=None, tier=None):
     )
     st.plotly_chart(hist_fig, use_container_width=True)
 
-    # Low-confidence beats call out
     low_conf = [p for p in preds if p.confidence < 0.5]
     if low_conf:
         st.warning(
@@ -171,7 +244,7 @@ def render(pkg=None, config=None, tier=None):
         )
 
     # ------------------------------------------------------------------------
-    # Benchmark & Offline Training Evaluation (Read from metrics.json)
+    # Offline training/evaluation benchmark (from models/metrics.json)
     # ------------------------------------------------------------------------
     st.markdown("---")
     st.markdown("### Offline Model Evaluation Benchmark")
@@ -180,7 +253,6 @@ def render(pkg=None, config=None, tier=None):
     if metrics_data is None:
         st.info("No `models/metrics.json` file detected. Training metrics are unavailable.")
     else:
-        # Display top-level config & training parameters
         cfg_meta = metrics_data.get("config", {})
         final_ssl_loss = metrics_data.get("ssl_final_loss", None)
 
@@ -190,16 +262,22 @@ def render(pkg=None, config=None, tier=None):
         with m_col2:
             st.metric("SSL Epochs", cfg_meta.get("ssl_epochs", "N/A"))
         with m_col3:
-            st.metric("Final SSL Loss", f"{final_ssl_loss:.4f}" if isinstance(final_ssl_loss, float) else "N/A")
+            st.metric(
+                "Final SSL Loss",
+                f"{final_ssl_loss:.4f}" if isinstance(final_ssl_loss, (int, float)) else "N/A",
+            )
         with m_col4:
-            # Display best fine-tuned Macro-F1 score if present
             clf_res = metrics_data.get("classification_results", {})
             best_ft = clf_res.get("full_finetune_100pct", {})
             best_f1 = best_ft.get("macro_f1") if isinstance(best_ft, dict) else best_ft
-            st.metric("100% FT Macro-F1", f"{best_f1:.4f}" if isinstance(best_f1, (float, int)) else "N/A")
+            st.metric(
+                "100% FT Macro-F1",
+                f"{best_f1:.4f}" if isinstance(best_f1, (int, float)) else "N/A",
+            )
 
-        # Tabs for performance metrics
-        tab_eval, tab_noise, tab_cm = st.tabs(["Label Efficiency", "Noise Robustness", "Confusion Matrix"])
+        tab_eval, tab_noise, tab_cm = st.tabs(
+            ["Label Efficiency", "Noise Robustness", "Confusion Matrix"]
+        )
 
         with tab_eval:
             clf_results = metrics_data.get("classification_results", {})
