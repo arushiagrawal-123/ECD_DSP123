@@ -1,11 +1,13 @@
 """Unit tests for the learned/ module.
 
 These run without a trained model (they verify graceful degradation) and with one
-if models/beat_classifier.onnx is present (they verify end-to-end shape agreement).
+if models/beat_classifier.onnx and models/metrics.json are present (they verify 
+end-to-end shape agreement, metrics schema, and benchmark validity).
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +16,9 @@ import pytest
 from ecg_monitor.learned import BeatClassifier, extract_beat_windows
 from ecg_monitor.learned.classifier import AAMI_CLASSES
 from ecg_monitor.learned.windowing import WINDOW_SAMPLES
+
+MODEL_PATH = Path("models/beat_classifier.onnx")
+METRICS_PATH = Path("models/metrics.json")
 
 
 # -----------------------------------------------------------------------------
@@ -70,8 +75,6 @@ def test_classifier_missing_model_is_unavailable():
 # Classifier (end-to-end, only runs if the model file exists)
 # -----------------------------------------------------------------------------
 
-MODEL_PATH = Path("models/beat_classifier.onnx")
-
 @pytest.mark.skipif(not MODEL_PATH.exists(), reason="trained ONNX model not available")
 def test_classifier_end_to_end_shape():
     clf = BeatClassifier.load(MODEL_PATH)
@@ -85,3 +88,55 @@ def test_classifier_end_to_end_shape():
         assert p.label in AAMI_CLASSES
         assert 0.0 <= p.confidence <= 1.0
         assert abs(sum(p.probabilities.values()) - 1.0) < 1e-4
+
+
+# -----------------------------------------------------------------------------
+# Metrics JSON Tests (verifies schema, bounds, and evaluation structure)
+# -----------------------------------------------------------------------------
+
+@pytest.mark.skipif(not METRICS_PATH.exists(), reason="metrics.json not available")
+def test_metrics_json_schema_and_integrity():
+    with open(METRICS_PATH, "r", encoding="utf-8") as f:
+        metrics = json.load(f)
+
+    # Core top-level keys
+    expected_keys = {
+        "config",
+        "ssl_final_loss",
+        "classification_results",
+        "noise_robustness",
+        "train_class_distribution",
+        "test_class_distribution",
+    }
+    assert expected_keys.issubset(metrics.keys()), f"Missing keys: {expected_keys - set(metrics.keys())}"
+
+    # Configuration integrity
+    cfg = metrics["config"]
+    assert cfg.get("fs") == 360
+    assert cfg.get("window_samples") == WINDOW_SAMPLES
+    assert cfg.get("aami_classes") == AAMI_CLASSES
+
+    # Pre-training loss validation
+    assert isinstance(metrics["ssl_final_loss"], (float, int))
+    assert metrics["ssl_final_loss"] > 0.0
+
+    # Class distribution checks (5 AAMI classes)
+    assert len(metrics["train_class_distribution"]) == len(AAMI_CLASSES)
+    assert len(metrics["test_class_distribution"]) == len(AAMI_CLASSES)
+    assert sum(metrics["train_class_distribution"]) > 0
+    assert sum(metrics["test_class_distribution"]) > 0
+
+    # Classification results validation (supports dict or direct float macro_f1)
+    clf_res = metrics["classification_results"]
+    assert len(clf_res) > 0
+    for key, val in clf_res.items():
+        score = val["macro_f1"] if isinstance(val, dict) else val
+        assert isinstance(score, (float, int))
+        assert 0.0 <= score <= 1.0
+
+    # Noise robustness validation
+    noise_res = metrics["noise_robustness"]
+    assert len(noise_res) > 0
+    for amp_key, f1 in noise_res.items():
+        assert amp_key.startswith("amp_")
+        assert 0.0 <= f1 <= 1.0
