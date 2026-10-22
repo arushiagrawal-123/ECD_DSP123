@@ -4,7 +4,7 @@ An educational research platform that combines classical digital signal processi
 
 The system performs three core tasks:
 
-1. Cleans noisy ECG signals using tiered filter pipelines (bandpass, notch, wavelet)
+1. Cleans noisy ECG signals using tiered filter pipelines (bandpass, notch, wavelet denoising)
 2. Detects every heartbeat with a custom Pan-Tompkins-inspired QRS detector
 3. Classifies each detected beat into AAMI 5-class arrhythmia categories (N, S, V, F, Q) using a 1D ResNet encoder pre-trained with contrastive learning on noise-augmented beats
 
@@ -14,14 +14,14 @@ The system performs three core tasks:
 
 ## Prerequisites
 
-- **Python**: 3.12 or higher
-- **OS**: Linux, macOS, or Windows (PowerShell commands shown; use the equivalent on your shell)
-- **Disk**: ~2 GB free for data, model, and dependencies
-- **GPU**: Not required for inference or the dashboard. Only needed if retraining the ML model (free Kaggle GPU is sufficient).
+- Python 3.12 or higher
+- Linux, macOS, or Windows
+- About 500 MB free disk space for data and dependencies
+- No GPU required. CPU inference works fine for the dashboard.
 
 ---
 
-## Installation
+## Setup
 
 ### 1. Clone the repository
 
@@ -30,7 +30,9 @@ git clone https://github.com/arushiagrawal-123/ECD_DSP123.git
 cd ECD_DSP123
 ```
 
-### 2. Create a virtual environment (recommended)
+The repository already contains the trained ONNX model (`models/beat_classifier.onnx`, 3.8 MB) and the training metrics (`models/metrics.json`). You do not need to train anything yourself to run the dashboard.
+
+### 2. Create a virtual environment
 
 **Linux / macOS:**
 ```bash
@@ -44,19 +46,19 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 ```
 
-### 3. Install the package in editable mode
+### 3. Install the package
 
 ```bash
-pip install -e .
+pip install -e ".[dev]"
 ```
 
-This installs all required dependencies (NumPy, SciPy, wfdb, PyWavelets, Streamlit, Plotly, onnxruntime, ReportLab, Pydantic, and others) and registers the `ecg_monitor` package so Python finds it from anywhere in the repo.
+This installs all runtime dependencies (NumPy, SciPy, wfdb, PyWavelets, Streamlit, Plotly, onnxruntime, ReportLab, Pydantic) plus development tools (pytest, ruff, mypy) and registers the `ecg_monitor` package in editable mode.
 
-### 4. Download the MIT-BIH ECG data
+### 4. Download MIT-BIH recordings
 
-The signal files are large and not committed to the repo. Download them from PhysioNet into the `data/` directory.
+The MIT-BIH signal files are not committed to the repo (they're binary and large). Download them from PhysioNet into the `data/` directory.
 
-**Linux / macOS (bash):**
+**Linux / macOS:**
 ```bash
 cd data
 for id in 100 101 105; do
@@ -78,29 +80,9 @@ foreach ($id in 100, 101, 105) {
 cd ..
 ```
 
-Each `.dat` file should be approximately **1.95 MB**. If any file is smaller, the download was truncated — delete it and re-download.
+Each `.dat` file should be around **1.95 MB**. If the download is smaller, it was truncated. Delete and retry, or download via a browser.
 
-> **Note:** If PhysioNet downloads time out from your region, open the direct URLs in your browser and use "Save As" to download them manually into the `data/` folder.
-
-### 5. Place the trained ML model
-
-The pre-trained ONNX model is not committed to the repo. You have two options:
-
-**Option A: Use the provided model** (if a teammate shared it with you)
-
-Place `beat_classifier.onnx` and `metrics.json` inside the `models/` folder at the repo root.
-
-**Option B: Train from scratch**
-
-See the "Training the ML Model" section below. Takes ~90 minutes on a free Kaggle GPU.
-
-Verify the model is in place:
-
-```bash
-ls models/
-```
-
-You should see `beat_classifier.onnx` (~3.8 MB) and `metrics.json`.
+That's it. The dashboard is ready to run.
 
 ---
 
@@ -110,30 +92,39 @@ You should see `beat_classifier.onnx` (~3.8 MB) and `metrics.json`.
 streamlit run app/main.py
 ```
 
-Open the URL printed in the terminal (usually `http://localhost:8501`) in a browser.
+Open the URL printed in the terminal (usually `http://localhost:8501`).
 
-> **Important:** Use the sidebar navigation on the left, under "ECG Dashboard". The top URL links (e.g. `/beat_classification`) are Streamlit's auto-generated page routes and will not work because they bypass the shared record loading.
+> **Use the sidebar navigation on the left**, under "ECG Dashboard". The top URL links (e.g. `/beat_classification`) are Streamlit's auto-generated routes and bypass the shared record loader, so they will not work.
 
-### Dashboard Pages
+### Pages
 
-| Page | What it does |
+| Page | Purpose |
 |---|---|
 | **Overview** | Load a record, view raw vs filtered signal, inspect quality score, see detected R-peaks |
 | **Live Replay** | Stream the recording in chunks to simulate a real-time monitor |
 | **Beat Classification** | Run the ONNX model on every detected beat; see per-beat AAMI labels overlaid on the ECG with confidence scores |
 | **Experiments** | Launch noise robustness sweeps and detector comparison benchmarks |
 
-### Beat Classification Page
+### Beat Classification Page in Detail
 
-On this page you will see:
+For every detected R-peak the model predicts one of five AAMI classes with a confidence score:
 
-- A caption line showing the number of R-peaks detected
-- The ECG plot with colored markers on each beat (green: N, orange: S, red: V, purple: F, gray: Q)
-- Hover tooltips with predicted class and confidence
-- A beat distribution table and confidence histogram
-- Offline training benchmark panels loaded from `models/metrics.json` (label efficiency, noise robustness, confusion matrix)
+| Code | Color | Meaning |
+|---|---|---|
+| N | green | Normal / bundle-branch block beat |
+| S | orange | Supraventricular ectopic (atrial) |
+| V | red | Ventricular ectopic (PVC) |
+| F | purple | Fusion beat |
+| Q | gray | Unknown or paced |
 
-For a demo with more class diversity, download record 208 or 221 (both have significant ventricular ectopic beats):
+The page displays:
+
+- A caption showing how many R-peaks were detected
+- ECG plot with colored markers on each beat and hover tooltips showing class + confidence
+- Beat distribution table and confidence histogram
+- Offline benchmark panels loaded from `models/metrics.json`: label efficiency bar chart, noise robustness line chart, confusion matrix heatmap
+
+For a demo showing class diversity, download record 208 or 221 (both contain significant ventricular ectopic beats):
 
 ```bash
 cd data
@@ -145,29 +136,31 @@ done
 cd ..
 ```
 
+Record 100 is almost entirely normal beats, so expect mostly green dots.
+
 ---
 
-## Running Experiments from the Command Line
+## Running Experiments from the CLI
 
-Three experiment scripts live in the `experiments/` directory. Each produces a CSV result file in `results/`.
+Three experiment scripts in `experiments/`, each writing a CSV to `results/`:
 
 ```bash
 python experiments/run_exp1_noise.py       # Noise robustness sweep across records 100, 101, 105
 python experiments/run_exp2_pipeline.py    # Compare Basic vs Standard vs Enhanced filter pipelines
-python experiments/run_exp3_detectors.py   # Benchmark custom QRS detector against NeuroKit2 and BioSPPy
+python experiments/run_exp3_detectors.py   # Benchmark the custom QRS detector against NeuroKit2 and BioSPPy
 ```
 
 ---
 
-## Running the Test Suite
+## Running the Tests
 
-Fast unit tests only (no data files required):
+Fast unit tests only:
 
 ```bash
 pytest
 ```
 
-Full test suite including integration tests that require cached MIT-BIH records:
+Full suite including integration tests (requires MIT-BIH data in `data/`):
 
 ```bash
 pytest -m "integration or not integration"
@@ -175,26 +168,18 @@ pytest -m "integration or not integration"
 
 ---
 
-## Training the ML Model (Kaggle)
+## Retraining the ML Model (Optional)
 
-The ML component is trained externally on Kaggle because it requires a GPU. All other components run on CPU.
+The ONNX model shipped with the repo was trained on Kaggle. If you want to retrain or modify the training, follow these steps.
 
-### Steps
+1. Create a new notebook on [kaggle.com](https://kaggle.com) with GPU enabled (P100 or T4)
+2. Add the MIT-BIH Arrhythmia Database as an input dataset (search `mondejar mitbih-database`)
+3. Paste the training script into one cell and run. Expected runtime: 90–120 minutes
+4. Download `beat_classifier.onnx` and `metrics.json` from Kaggle's Output tab
+5. Replace the files in `models/` with the new ones
+6. Restart the Streamlit dashboard
 
-1. Create a new notebook on [kaggle.com](https://kaggle.com) and enable GPU (P100 or T4)
-2. Add the **MIT-BIH Arrhythmia Database** by Mondejar as an input dataset (search Kaggle for `mondejar mitbih-database`)
-3. Paste the entire contents of `kaggle_train_ssl_ecg.py` into one code cell
-4. Run the cell. Expected runtime: 90–120 minutes
-5. From Kaggle's Output tab, download:
-   - `beat_classifier.onnx`
-   - `metrics.json`
-   - `ssl_loss_curve.png`
-   - `label_efficiency.png`
-   - `noise_robustness.png`
-6. Place `beat_classifier.onnx` and `metrics.json` into the `models/` folder of the repo
-7. Restart the Streamlit dashboard
-
-The script performs: SimCLR pre-training on noise-augmented beats, supervised fine-tuning on AAMI DS1 labels (at 1%, 10%, 100% label fractions), evaluation on DS2 with macro-F1, noise robustness sweep, and ONNX export.
+The training performs: SimCLR contrastive pre-training on noise-augmented beats, supervised fine-tuning on AAMI DS1 labels at 1%, 10%, and 100% label fractions, evaluation on DS2 with macro-F1, a noise robustness sweep, and ONNX export.
 
 ---
 
@@ -210,10 +195,10 @@ ECD_DSP123/
 │       ├── experiments.py
 │       └── beat_classification.py
 ├── src/ecg_monitor/              # Core library
-│   ├── acquisition/              # Load MIT-BIH records via wfdb
-│   ├── artifacts/                # Noise generators (baseline wander, powerline, EMG, motion)
-│   ├── preprocessing/            # Filter pipelines (Basic, Standard, Enhanced)
-│   ├── quality/                  # Signal quality scoring
+│   ├── acquisition/              # Load MIT-BIH records (wfdb)
+│   ├── artifacts/                # Noise generators: baseline wander, powerline, EMG, motion
+│   ├── preprocessing/            # Filter pipelines: Basic, Standard, Enhanced
+│   ├── quality/                  # Signal quality scoring (reference-based + reference-free)
 │   ├── detection/                # QRS / R-peak detector
 │   ├── evaluation/               # Peak matching against ground-truth annotations
 │   ├── heart_rate/               # HR and HRV statistics
@@ -221,15 +206,17 @@ ECD_DSP123/
 │   ├── streaming/                # Live replay simulator
 │   ├── reporting/                # PDF, CSV, JSON report generation
 │   ├── experiments/              # Experiment orchestration
-│   ├── learned/                  # ML inference wrapper (ONNX runtime)
+│   ├── learned/                  # ML inference (ONNX runtime wrapper)
 │   └── core/                     # Shared Pydantic data models
 ├── tests/                        # Unit and integration tests
-├── data/                         # MIT-BIH recordings (not in git)
-├── models/                       # Trained ONNX model (not in git)
-├── results/                      # Experiment output CSVs
+├── data/                         # MIT-BIH recordings (not in git, download yourself)
+├── models/                       # Trained model (committed to git)
+│   ├── beat_classifier.onnx
+│   └── metrics.json
+├── results/                      # Experiment output CSVs (not in git)
 ├── config.yaml                   # Project configuration
-├── kaggle_train_ssl_ecg.py       # ML training script (run on Kaggle)
 ├── pyproject.toml                # Package build configuration
+├── PROJECT_STATE.md              # Build log and architectural decisions
 └── README.md
 ```
 
@@ -238,20 +225,16 @@ ECD_DSP123/
 ## Troubleshooting
 
 **"Running load_ecg_record(...)" hangs on dashboard load**
-
-The record's `.dat` file is missing from `data/`. Only `.hea` and `.atr` (text files) are tiny and may be committed; the `.dat` is binary and must be downloaded. Check `ls data/` and verify all three files exist for the record you are loading.
+The record's `.dat` file is missing from `data/`. Run `ls data/` and confirm you have `.dat`, `.hea`, and `.atr` for the record you want to load.
 
 **"Failed to load record X: operands could not be broadcast together"**
-
-The `.dat` file is truncated. Check its size — it should be approximately 1.95 MB. Re-download. If PhysioNet keeps timing out, download via a browser instead of `curl` or `Invoke-WebRequest`.
+The `.dat` file is truncated. Check its size — it should be about 1.95 MB. Re-download; if `curl` keeps timing out, download via a browser.
 
 **Beat Classification page shows "Model unavailable"**
-
-The ONNX model is missing from `models/`. Either copy `beat_classifier.onnx` into `models/`, or train it on Kaggle (see above).
+The ONNX model is missing from `models/`. It ships with the repo, so this usually means someone deleted it. Pull the latest version from git or re-clone.
 
 **Beat Classification page is blank**
-
-Streamlit cached a stale version. Clear the Python bytecode cache and restart:
+Streamlit cached stale bytecode. Clear it and restart:
 
 ```bash
 # Linux / macOS
@@ -262,36 +245,21 @@ Remove-Item -Recurse -Force app\pages\__pycache__
 Remove-Item -Recurse -Force src\ecg_monitor\learned\__pycache__
 ```
 
-Then stop Streamlit (Ctrl+C) and run `streamlit run app/main.py` again. Hard refresh the browser (Ctrl+Shift+R).
+Stop Streamlit (Ctrl+C), run `streamlit run app/main.py` again, and hard-refresh the browser (Ctrl+Shift+R).
 
-**Top URL links (e.g. `/beat_classification`) do not work**
-
-Those are Streamlit's auto-detected pages and bypass the shared record loader. Use the sidebar navigation under "ECG Dashboard" instead.
-
-**pip install fails on PyTorch or CUDA packages**
-
-PyTorch is only required for training on Kaggle. The local install uses lightweight CPU inference via `onnxruntime`. If PyTorch is listed as a hard dependency in `pyproject.toml`, remove it before installing locally — or install everything with `pip install -e . --no-deps` and then install only the inference-time packages manually.
-
----
-
-## Documentation
-
-- **PROJECT_REPORT.pdf** — Full technical project report (overview, architecture, pipeline, experiments, results, limitations)
-- **ML_EXPLAINED.pdf** — Deep-dive explainer of the machine-learning component
+**Top URL links do not work**
+Those are Streamlit's auto-detected pages. They bypass the shared record loader. Use the sidebar navigation under "ECG Dashboard" instead.
 
 ---
 
 ## License
 
-MIT License. See `LICENSE` file for details.
+MIT License (as declared in `pyproject.toml`).
 
 ## Citation
 
 Based on the PhysioNet MIT-BIH Arrhythmia Database:
 
 > Moody GB, Mark RG. The impact of the MIT-BIH Arrhythmia Database. IEEE Eng in Med and Biol 20(3):45–50 (May–June 2001).
+>
 > Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh, Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. PhysioBank, PhysioToolkit, and PhysioNet: Components of a New Research Resource for Complex Physiologic Signals. Circulation 101(23):e215–e220 (2000).
-
-## Disclaimer
-
-This is an educational research prototype. All classifications and alerts are candidates for human review, not clinical diagnoses. The system is not approved for medical use and should never be used as a substitute for professional medical judgment.
