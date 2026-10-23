@@ -24,6 +24,7 @@ class ExperimentConfig(BaseModel):
     # the target SNR or the applied artifact configuration.
     noise_description: dict[str, Any] = Field(default_factory=dict)
     detector_name: str = "custom"  # "custom", "neurokit2", or "biosppy"
+    duration_s: float | None = None
 
 
 class ExperimentResult(BaseModel):

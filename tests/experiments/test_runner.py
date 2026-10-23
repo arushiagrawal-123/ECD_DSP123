@@ -57,6 +57,7 @@ def test_experiment_runner_structure_and_reproducibility(config, data_dir, real_
     assert res1.hr_average_bpm == res2.hr_average_bpm
 
 
+@pytest.mark.integration
 def test_adapters(data_dir):
     """
     Test NK2 and BioSPPy adapters on a tiny synthetic sine wave.

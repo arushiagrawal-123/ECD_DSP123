@@ -108,7 +108,11 @@ def test_integration_evaluator(record_100: ECGPackage, config: ECGMonitorConfig)
     segment = pkg.raw_signal[: 5 * 60 * fs]
     
     # Slice reference annotations to match the 5-minute segment
-    valid_refs = filter_reference_beats(pkg.reference_annotations.sample_indices, pkg.reference_annotations.symbols)
+    valid_refs = filter_reference_beats(
+        pkg.reference_annotations.sample_indices,
+        pkg.reference_annotations.symbols,
+        cfg.evaluation.valid_beat_symbols,
+    )
     segment_refs = [r for r in valid_refs if r < 5 * 60 * fs]
     
     # Create a mock package for evaluation (since we sliced)

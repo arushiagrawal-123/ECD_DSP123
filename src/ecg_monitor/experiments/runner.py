@@ -10,7 +10,7 @@ from ecg_monitor.acquisition.loader import load_record
 from ecg_monitor.alerts.engine import AlertEngine
 from ecg_monitor.artifacts.inject import add_noise
 from ecg_monitor.config.schema import ECGMonitorConfig
-from ecg_monitor.core.models import SignalQuality
+from ecg_monitor.core.models import ReferenceAnnotations, SignalQuality
 from ecg_monitor.detection.detector import QRSDetector
 from ecg_monitor.evaluation.evaluator import evaluate_detection
 from ecg_monitor.experiments.adapters import detect_peaks_biosppy, detect_peaks_neurokit2
@@ -26,6 +26,7 @@ def run_pipeline_experiment(
     base_config: ECGMonitorConfig,
     data_dir: Path,
     artifact_types: list[str] | None = None,
+    duration_s: float | None = None,
 ) -> ExperimentResult:
     """
     Run the end-to-end ECG processing pipeline for a single experiment configuration.
@@ -41,6 +42,8 @@ def run_pipeline_experiment(
     artifact_types:
         List of artifact types to inject (e.g. ["baseline_wander"]).
         If None, applies all types enabled in base_config.noise.
+    duration_s:
+        Optional duration in seconds to truncate signal for faster execution.
 
     Returns
     -------
@@ -51,6 +54,27 @@ def run_pipeline_experiment(
     pkg = load_record(exp_config.record_id, data_dir)
     fs = pkg.sampling_rate
     clean_signal = pkg.raw_signal
+
+    dur = duration_s if duration_s is not None else getattr(exp_config, "duration_s", None)
+    if dur is not None and dur > 0:
+        max_samples = int(dur * fs)
+        clean_signal = clean_signal[:max_samples]
+        pkg.raw_signal = clean_signal
+        if pkg.reference_annotations is not None:
+            filtered_indices = []
+            filtered_symbols = []
+            for idx, sym in zip(
+                pkg.reference_annotations.sample_indices,
+                pkg.reference_annotations.symbols,
+                strict=False,
+            ):
+                if idx < max_samples:
+                    filtered_indices.append(idx)
+                    filtered_symbols.append(sym)
+            pkg.reference_annotations = ReferenceAnnotations(
+                sample_indices=filtered_indices,
+                symbols=filtered_symbols,
+            )
 
     # Update base config with the experiment's seed for reproducibility
     base_config.noise.random_seed = exp_config.random_seed

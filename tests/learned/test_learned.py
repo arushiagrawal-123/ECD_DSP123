@@ -114,7 +114,7 @@ def test_metrics_json_schema_and_integrity():
     cfg = metrics["config"]
     assert cfg.get("fs") == 360
     assert cfg.get("window_samples") == WINDOW_SAMPLES
-    assert cfg.get("aami_classes") == AAMI_CLASSES
+    assert tuple(cfg.get("aami_classes", ())) == AAMI_CLASSES
 
     # Pre-training loss validation
     assert isinstance(metrics["ssl_final_loss"], (float, int))
